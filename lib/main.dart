@@ -10,6 +10,8 @@ import 'package:shimmer/shimmer.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
@@ -403,20 +405,87 @@ class FavoritesTab extends StatelessWidget { const FavoritesTab({super.key}); @o
   ])));
 }}
 
-// SETTINGS
-class SettingsTab extends ConsumerWidget { const SettingsTab({super.key}); @override Widget build(BuildContext context, WidgetRef ref){
-  final mode = ref.watch(themeModeProvider);
-  return Scaffold(appBar: AppBar(title: Text('settings'.tr())), body: ListView(children: [
-    ListTile(title: Text('theme'.tr()), subtitle: Text(mode), trailing: const Icon(Icons.palette_rounded)),
-    RadioListTile(value: 'system', groupValue: mode, title: Text('theme_system'.tr()), onChanged: (v){ ref.read(themeModeProvider.notifier).state=v!; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode', v));}),
-    RadioListTile(value: 'light', groupValue: mode, title: Text('theme_light'.tr()), onChanged: (v){ ref.read(themeModeProvider.notifier).state=v!; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode', v));}),
-    RadioListTile(value: 'dark', groupValue: mode, title: Text('theme_dark'.tr()), onChanged: (v){ ref.read(themeModeProvider.notifier).state=v!; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode', v));}),
-    RadioListTile(value: 'amoled', groupValue: mode, title: Text('theme_amoled'.tr()), subtitle: const Text('Saf siyah'), onChanged: (v){ ref.read(themeModeProvider.notifier).state=v!; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode', v));}),
-    const Divider(),
-    ListTile(title: Text('language'.tr()), trailing: DropdownButton<String>(value: context.locale.languageCode, items: const [DropdownMenuItem(value:'tr', child: Text('Türkçe')), DropdownMenuItem(value:'en', child: Text('English'))], onChanged: (v){ if(v!=null){ context.setLocale(Locale(v)); SharedPreferences.getInstance().then((p)=> p.setString('lang', v));}})),
-    const Divider(),
-    SwitchListTile(title: Text('auto_update'.tr()), subtitle: const Text('GitHub releases otomatik kontrol'), value: true, onChanged: (_){}),
-    ListTile(title: const Text('GitHub Deposu'), subtitle: const Text('ErhaEmir/indir-gitsin'), trailing: const Icon(Icons.open_in_new_rounded), onTap: (){}),
-    ListTile(title: Text('Sürüm'), subtitle: FutureBuilder(future: Future.value('v1.0.2'), builder: (_,s)=> Text(s.data ?? ''))),
-  ]));
-}}
+// SETTINGS - portatif ve kullanıcı dostu
+class SettingsTab extends ConsumerStatefulWidget { const SettingsTab({super.key}); @override ConsumerState<SettingsTab> createState()=> _SettingsTabState();}
+class _SettingsTabState extends ConsumerState<SettingsTab> {
+  bool _autoUpdate = true;
+  bool _checking = false;
+  String? _status;
+  @override void initState(){ super.initState(); _load(); }
+  Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> _autoUpdate = p.getBool('auto_update_enabled') ?? true); }
+  Future<void> _toggleAuto(bool v) async { setState(()=> _autoUpdate=v); final p=await SharedPreferences.getInstance(); await p.setBool('auto_update_enabled', v); }
+  Future<void> _manualCheck() async {
+    setState(()=> _checking=true);
+    try {
+      await AppUpdateService().checkAndUpdateSilently(force: true);
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kontrol edildi - güncelse sessiz kalır, varsa indirilir'.tr()), behavior: SnackBarBehavior.floating));
+      setState(()=> _status='Kontrol tamamlandı');
+    } catch(e){ setState(()=> _status='Hata: $e'); }
+    finally { if(mounted) setState(()=> _checking=false); Future.delayed(const Duration(seconds: 3), ()=> setState(()=> _status=null));}
+  }
+  Future<void> _openUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+  @override Widget build(BuildContext context){
+    final mode = ref.watch(themeModeProvider);
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: Text('settings'.tr())),
+      body: ListView(padding: const EdgeInsets.fromLTRB(16,12,16,24), children: [
+        // Tema kartı
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.palette_rounded, color: cs.primary)), const SizedBox(width: 10), Text('theme'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            ChoiceChip(label: Text('theme_system'.tr()), selected: mode=='system', onSelected: (_){ ref.read(themeModeProvider.notifier).state='system'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','system'));}),
+            ChoiceChip(label: Text('theme_light'.tr()), selected: mode=='light', onSelected: (_){ ref.read(themeModeProvider.notifier).state='light'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','light'));}),
+            ChoiceChip(label: Text('theme_dark'.tr()), selected: mode=='dark', onSelected: (_){ ref.read(themeModeProvider.notifier).state='dark'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','dark'));}),
+            ChoiceChip(label: Text('theme_amoled'.tr()), selected: mode=='amoled', avatar: const Icon(Icons.contrast_rounded, size:16), onSelected: (_){ ref.read(themeModeProvider.notifier).state='amoled'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','amoled'));}),
+          ]),
+          const SizedBox(height: 8),
+          Text('Material You Dynamic Color sistem rengini kullanır, AMOLED saf siyah yapar', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        ]))),
+        const SizedBox(height: 12),
+        // Dil
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.language_rounded, color: cs.primary)), const SizedBox(width: 10), Text('language'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          const SizedBox(height: 12),
+          SegmentedButton<String>(segments: const [ButtonSegment(value:'tr', label: Text('Türkçe'), icon: Icon(Icons.flag_rounded)), ButtonSegment(value:'en', label: Text('English'), icon: Icon(Icons.flag_outlined))], selected: {context.locale.languageCode}, onSelectionChanged: (s){ final v=s.first; context.setLocale(Locale(v)); SharedPreferences.getInstance().then((p)=> p.setString('lang', v));}),
+        ]))),
+        const SizedBox(height: 12),
+        // Güncelleme kartı
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.green.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.system_update_rounded, color: Colors.green)), const SizedBox(width: 10), Text('auto_update'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          const SizedBox(height: 4),
+          Text('Yeni sürüm çıkınca otomatik indirir ve kurulumu başlatır (arka planda 6 saatte bir kontrol)', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 12),
+          SwitchListTile(value: _autoUpdate, title: Text(_autoUpdate ? 'Açık'.tr() : 'Kapalı'.tr()), subtitle: Text(_autoUpdate ? 'Arka planda kontrol ediliyor' : 'Manuel kontrol gerekir'), onChanged: _toggleAuto, contentPadding: EdgeInsets.zero),
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _checking ? null : _manualCheck, icon: _checking ? const SizedBox(width:16,height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) : const Icon(Icons.refresh_rounded), label: Text('Güncellemeleri denetle'.tr()))),
+          if(_status!=null) Padding(padding: const EdgeInsets.only(top:8), child: Text(_status!, style: TextStyle(color: cs.primary, fontSize:12, fontWeight: FontWeight.w600))),
+        ]))),
+        const SizedBox(height: 12),
+        // Hakkında - portatif kullanıcı dostu
+        Card(
+          color: cs.primaryContainer.withOpacity(0.4),
+          child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.info_rounded, color: Colors.white)), const SizedBox(width: 12), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Hakkında'.tr(), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), Text('İndir Gitsin', style: TextStyle(color: Colors.grey[700], fontSize: 12))])]),
+            const SizedBox(height: 14),
+            Row(children: [CircleAvatar(radius: 28, backgroundColor: cs.primary, child: const Icon(Icons.person_rounded, color: Colors.white, size: 28)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Erhan Emir Bayram', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)), const SizedBox(height:2), Text('Geliştirici', style: TextStyle(color: Colors.grey[600], fontSize: 12)), const SizedBox(height:6), InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.link_rounded, size:14, color: cs.primary), const SizedBox(width:4), Text('github.com/ErhaEmir', style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize:12))]))]))]),
+            const SizedBox(height: 14),
+            Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(14)), child: Column(children: [
+              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir/indir-gitsin'), child: Row(children: [Icon(Icons.code_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GitHub Deposu', style: const TextStyle(fontWeight: FontWeight.w700)), Text('ErhaEmir/indir-gitsin', style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
+              const Divider(height:16),
+              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.person_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici GitHub', style: const TextStyle(fontWeight: FontWeight.w700)), Text('github.com/ErhaEmir', style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
+            ])),
+            const SizedBox(height: 12),
+            FutureBuilder<PackageInfo>(future: PackageInfo.fromPlatform(), builder: (c,s){ final v=s.data; return Text(v==null? 'Yükleniyor...': 'Sürüm ${v.version}+${v.buildNumber} • ${v.appName}', style: TextStyle(color: Colors.grey[600], fontSize:11), textAlign: TextAlign.center);}),
+          ])),
+        ),
+      ]),
+    );
+  }
+}

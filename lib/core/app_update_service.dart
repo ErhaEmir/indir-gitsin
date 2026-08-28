@@ -14,6 +14,8 @@ class AppUpdateService {
   Future<void> checkAndUpdateSilently({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('auto_update_enabled') ?? true;
+      if (!enabled && !force) return;
       final last = prefs.getInt('last_update_check') ?? 0;
       if (!force && DateTime.now().millisecondsSinceEpoch - last < checkInterval.inMilliseconds) return;
       await prefs.setInt('last_update_check', DateTime.now().millisecondsSinceEpoch);
