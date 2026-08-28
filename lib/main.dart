@@ -169,6 +169,8 @@ class _HomePageState extends ConsumerState<HomePage> with TickerProviderStateMix
         url: _selected!.url,
         fileName: title,
         ext: _selected!.type == 'audioOnly' ? 'm4a' : ext,
+        videoId: _video!.id,
+        streamTag: _selected!.tag,
         onProgress: (rx, total) {
           if (total > 0 && mounted) setState(() => _progress = rx / total);
         },
