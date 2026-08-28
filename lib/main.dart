@@ -60,7 +60,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Future<void> _checkClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kText);
+    final data = await Clipboard.getData('text/plain');
     final text = data?.text ?? '';
     if (YoutubeService.isValidYoutubeUrl(text)) {
       _linkCtrl.text = text;
@@ -166,7 +166,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Future<void> _paste() async {
-    final data = await Clipboard.getData(Clipboard.kText);
+    final data = await Clipboard.getData('text/plain');
     if (data?.text != null) {
       _linkCtrl.text = data!.text!;
       _fetch();

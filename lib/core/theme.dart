@@ -10,7 +10,7 @@ class AppTheme {
     colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
     textTheme: GoogleFonts.interTextTheme(),
     appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
-    cardTheme: CardThemeData(
+    cardTheme: CardTheme(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
@@ -28,7 +28,7 @@ class AppTheme {
     scaffoldBackgroundColor: darkBg,
     textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
     appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0, backgroundColor: darkBg),
-    cardTheme: CardThemeData(
+    cardTheme: CardTheme(
       elevation: 0,
       color: const Color(0xFF1F1F1F),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
