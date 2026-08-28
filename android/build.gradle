@@ -16,20 +16,3 @@ subprojects {
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
-
-// JVM target uyumu - tum pluginlerde Java/Kotlin 17 esitle (afterEvaluate timing fix)
-gradle.projectsEvaluated {
-    subprojects { project ->
-        if (project.hasProperty("android")) {
-            project.android.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
-            project.android.compileOptions.targetCompatibility = JavaVersion.VERSION_17
-        }
-        project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions.jvmTarget = "17"
-        }
-        project.tasks.withType(JavaCompile).configureEach {
-            sourceCompatibility = JavaVersion.VERSION_17
-            targetCompatibility = JavaVersion.VERSION_17
-        }
-    }
-}

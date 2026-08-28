@@ -28,6 +28,14 @@ jobs:
       - name: Install deps
         run: flutter pub get
 
+      - name: Patch plugins for JDK17 (JVM target mismatch fix)
+        run: |
+          echo "Patching receive_sharing_intent and other plugins..."
+          find ~/.pub-cache -path "*receive_sharing_intent*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; -exec sed -i 's/"1.8"/"17"/g' {} \; -exec cat {} \; 2>&1 | head -80
+          find ~/.pub-cache -path "*device_info_plus*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; -exec sed -i 's/"1.8"/"17"/g' {} \; 2>&1 | head -20
+          find ~/.pub-cache -path "*path_provider*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; 2>&1 | head -20
+          echo "Patch done"
+
       - name: Ensure Android scaffold (flutter create if missing)
         run: |
           if [ ! -f android/settings.gradle ] || [ ! -f android/gradle/wrapper/gradle-wrapper.properties ]; then
