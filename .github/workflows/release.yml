@@ -33,16 +33,20 @@ jobs:
           echo "Patching plugins for JDK17..."
           PUB_CACHE=$(flutter pub cache dir 2>/dev/null || echo "$HOME/.pub-cache")
           echo "PUB_CACHE=$PUB_CACHE"
-          ls -R "$PUB_CACHE/hosted/pub.dev" 2>&1 | head -20
-          find "$PUB_CACHE" -name "build.gradle" 2>/dev/null | xargs grep -l "VERSION_1_8" 2>/dev/null | head -20
+          for f in "$PUB_CACHE/hosted/pub.dev/receive_sharing_intent-"*/android/build.gradle; do
+            echo "Direct patch $f"
+            [ -f "$f" ] && sed -i 's/VERSION_1_8/VERSION_17/g' "$f" && sed -i 's/"1.8"/"17"/g' "$f" && sed -i "s/'1.8'/'17'/g" "$f" && cat "$f" | head -40
+          done
+          # fallback generic
           find "$PUB_CACHE" -name "build.gradle" -exec grep -l "VERSION_1_8" {} \; 2>/dev/null | while read f; do
-            echo "Patching $f"
+            echo "Generic patch $f"
             sed -i 's/VERSION_1_8/VERSION_17/g' "$f"
             sed -i 's/"1.8"/"17"/g' "$f"
             sed -i "s/'1.8'/'17'/g" "$f"
           done
-          echo "Patch done - verifying receive_sharing_intent:"
-          find "$PUB_CACHE" -path "*receive_sharing_intent*" -name "build.gradle" -exec cat {} \; 2>&1 | head -60
+          echo "Patch done - verifying:"
+          ls -la "$PUB_CACHE/hosted/pub.dev/receive_sharing_intent-"*/android/build.gradle 2>&1
+          cat "$PUB_CACHE/hosted/pub.dev/receive_sharing_intent-"*/android/build.gradle 2>&1 | head -50
 
       - name: Ensure Android scaffold (flutter create if missing)
         run: |
