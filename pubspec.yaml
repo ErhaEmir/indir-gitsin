@@ -39,7 +39,7 @@ dependencies:
   device_info_plus: ^10.1.2
   package_info_plus: ^8.0.2
   shared_preferences: ^2.3.2
-  dynamic_color: ^1.7.0
+  dynamic_color: 1.7.0
   video_player: ^2.8.6
   chewie: ^1.8.1
   easy_localization: ^3.0.7
