@@ -29,15 +29,23 @@ Future<void> main() async {
   await StorageService.init();
   final prefs = await SharedPreferences.getInstance();
   final savedTheme = prefs.getString('theme_mode') ?? 'system';
-  final savedLang = prefs.getString('lang') ?? 'tr';
+  final savedLang = prefs.getString('lang');
+  Locale startLocale;
+  if (savedLang != null) {
+    startLocale = Locale(savedLang);
+  } else {
+    final sys = WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    startLocale = sys == 'tr' ? const Locale('tr') : const Locale('en');
+  }
   runApp(
     ProviderScope(
       overrides: [themeModeProvider.overrideWith((ref) => savedTheme)],
       child: EasyLocalization(
         supportedLocales: const [Locale('tr'), Locale('en')],
         path: 'assets/translations',
-        fallbackLocale: const Locale('tr'),
-        startLocale: Locale(savedLang),
+        fallbackLocale: const Locale('en'),
+        startLocale: startLocale,
+        saveLocale: true,
         child: const IndirGitsinApp(),
       ),
     ),
@@ -123,10 +131,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         selectedIndex: _idx,
         onDestinationSelected: (i) => setState(() => _idx = i),
         destinations: [
-          NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'Ana Sayfa'.tr()),
-          NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'Dosyalarım'.tr()),
-          NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'Favoriler'.tr()),
-          NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'Ayarlar'.tr()),
+          NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
+          NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
+          NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
+          NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
         ],
       ),
     );
@@ -203,7 +211,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
         if (YoutubeService.isValidYoutubeUrl(text)) {
           _linkCtrl.text = text;
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Paylaşılan video hazırlanıyor...'.tr()), behavior: SnackBarBehavior.floating));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('share_preparing'.tr()), behavior: SnackBarBehavior.floating));
           }
           _fetch();
         }
@@ -224,8 +232,8 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
 
   Future<void> _fetch() async {
     final url = _linkCtrl.text.trim();
-    if (url.isEmpty) { setState(() => _error = 'Lütfen link yapıştırın'.tr()); return; }
-    if (!YoutubeService.isValidYoutubeUrl(url)) { setState(() => _error = 'Geçersiz link'.tr()); return; }
+    if (url.isEmpty) { setState(() => _error = 'please_paste'.tr()); return; }
+    if (!YoutubeService.isValidYoutubeUrl(url)) { setState(() => _error = 'invalid_link'.tr()); return; }
     StorageService.addSearch(url);
     HapticFeedback.lightImpact();
     setState(() { _loading = true; _error = null; _video = null; _selected = null; _savedPath = null; });
@@ -235,9 +243,9 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
       setState(() { _video = info; _selected = info.streams.isNotEmpty ? info.streams.first : null; });
       HapticFeedback.selectionClick();
     } on TimeoutException {
-      setState(() => _error = 'Zaman aşımı, tekrar dene'.tr());
+      setState(() => _error = 'timeout'.tr());
     } catch (e) {
-      setState(() => _error = 'Alınamadı: $e');
+      setState(() => _error = '${'failed'.tr()}: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -258,9 +266,9 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
       StorageService.addHistory({'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${_video!.id}', 'path': path, 'date': DateTime.now().toIso8601String()});
       setState(() { _savedPath = path; _downloading = false; _progress = 1; });
       HapticFeedback.heavyImpact();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('İndirildi: ${path.split('/').last}'), action: SnackBarAction(label: 'AÇ'.tr(), onPressed: () => OpenFilex.open(path)), behavior: SnackBarBehavior.floating));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'downloaded'.tr()}: ${path.split('/').last}'), action: SnackBarAction(label: 'open'.tr(), onPressed: () => OpenFilex.open(path)), behavior: SnackBarBehavior.floating));
     } catch (e) {
-      setState(() { _downloading = false; _error = 'Hata: $e'; });
+      setState(() { _downloading = false; _error = '${'error'.tr()}: $e'; });
     }
   }
 
@@ -296,11 +304,11 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
                   decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cs.primary, const Color(0xFF7B0000)]), borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: cs.primary.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 8))]),
                   child: Row(children: [
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(99)), child: const Text('YENİ', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800))), const SizedBox(width: 8), Text('⚡ Hızlı • Akıllı', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12))]),
+                      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(99)), child: Text('new'.tr(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800))), const SizedBox(width: 8), Text('fast_smart'.tr(), style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12))]),
                       const SizedBox(height: 8),
-                      Text('YouTube & Music'.tr(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+                      Text('subtitle'.tr(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
                       const SizedBox(height: 4),
-                      Text('Yapıştır → anında hazır\nPaylaş → direkt indir', style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12, height: 1.35)),
+                      Text('hero_desc'.tr(), style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12, height: 1.35)),
                       const SizedBox(height: 12),
                       Wrap(spacing: 6, runSpacing: 6, children: [_chip('MP4', Icons.videocam_rounded), _chip('MP3', Icons.music_note_rounded), _chip('4K', Icons.high_quality_rounded)]),
                     ])),
@@ -338,20 +346,20 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
               ],
               const SizedBox(height: 10),
               if (_error != null)
-                Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: cs.errorContainer, borderRadius: BorderRadius.circular(16)), child: Row(children: [Icon(Icons.error_outline_rounded, color: cs.onErrorContainer), const SizedBox(width: 8), Expanded(child: Text(_error!, style: TextStyle(color: cs.onErrorContainer))), TextButton(onPressed: _fetch, child: Text('Tekrar'.tr()))])),
+                Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: cs.errorContainer, borderRadius: BorderRadius.circular(16)), child: Row(children: [Icon(Icons.error_outline_rounded, color: cs.onErrorContainer), const SizedBox(width: 8), Expanded(child: Text(_error!, style: TextStyle(color: cs.onErrorContainer))), TextButton(onPressed: _fetch, child: Text('retry'.tr()))])),
               if (_loading) ...[const SizedBox(height: 16), _shimmer(isDark)],
               if (_video != null) ...[
                 const SizedBox(height: 16),
                 _videoCard(context),
                 const SizedBox(height: 12),
-                Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('Favoriye ekle'.tr()), const Spacer(), Text('${_video!.streams.length} seçenek'.tr(), style: const TextStyle(color: Colors.grey))]),
+                Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('add_favorite'.tr()), const Spacer(), Text('options_count'.tr(namedArgs: {'count': '${_video!.streams.length}'}), style: const TextStyle(color: Colors.grey))]),
                 const SizedBox(height: 8),
                 ..._video!.streams.asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
                 if (_downloading) LinearProgressIndicator(value: _progress, borderRadius: BorderRadius.circular(99), minHeight: 8),
                 const SizedBox(height: 10),
                 SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _downloading ? null : _download, icon: Icon(_savedPath != null ? Icons.check_circle_rounded : Icons.download_rounded), label: Text(_savedPath != null ? 'download_again'.tr() : 'download'.tr()))),
-                if (_savedPath != null) Padding(padding: const EdgeInsets.only(top: 8), child: SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerPage(path: _savedPath!, title: _video!.title))), icon: const Icon(Icons.play_arrow_rounded), label: Text('Oynat'.tr())))),
+                if (_savedPath != null) Padding(padding: const EdgeInsets.only(top: 8), child: SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerPage(path: _savedPath!, title: _video!.title))), icon: const Icon(Icons.play_arrow_rounded), label: Text('play'.tr())))),
               ],
               if (!_loading && _video == null && _error == null) ...[const SizedBox(height: 20), _empty(context)],
             ]),
@@ -418,8 +426,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     setState(()=> _checking=true);
     try {
       await AppUpdateService().checkAndUpdateSilently(force: true);
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kontrol edildi - güncelse sessiz kalır, varsa indirilir'.tr()), behavior: SnackBarBehavior.floating));
-      setState(()=> _status='Kontrol tamamlandı');
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('check_done'.tr()), behavior: SnackBarBehavior.floating));
+      setState(()=> _status='check_done'.tr());
     } catch(e){ setState(()=> _status='Hata: $e'); }
     finally { if(mounted) setState(()=> _checking=false); Future.delayed(const Duration(seconds: 3), ()=> setState(()=> _status=null));}
   }
@@ -446,7 +454,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             ChoiceChip(label: Text('theme_amoled'.tr()), selected: mode=='amoled', avatar: const Icon(Icons.contrast_rounded, size:16), onSelected: (_){ ref.read(themeModeProvider.notifier).state='amoled'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','amoled'));}),
           ]),
           const SizedBox(height: 8),
-          Text('Material You Dynamic Color sistem rengini kullanır, AMOLED saf siyah yapar', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text('material_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         ]))),
         const SizedBox(height: 12),
         // Dil
@@ -460,11 +468,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.green.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.system_update_rounded, color: Colors.green)), const SizedBox(width: 10), Text('auto_update'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 4),
-          Text('Yeni sürüm çıkınca otomatik indirir ve kurulumu başlatır (arka planda 6 saatte bir kontrol)', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text('auto_update_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 12),
-          SwitchListTile(value: _autoUpdate, title: Text(_autoUpdate ? 'Açık'.tr() : 'Kapalı'.tr()), subtitle: Text(_autoUpdate ? 'Arka planda kontrol ediliyor' : 'Manuel kontrol gerekir'), onChanged: _toggleAuto, contentPadding: EdgeInsets.zero),
+          SwitchListTile(value: _autoUpdate, title: Text(_autoUpdate ? 'auto_on'.tr() : 'auto_off'.tr()), subtitle: Text(_autoUpdate ? 'auto_on_desc'.tr() : 'auto_off_desc'.tr()), onChanged: _toggleAuto, contentPadding: EdgeInsets.zero),
           const SizedBox(height: 8),
-          SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _checking ? null : _manualCheck, icon: _checking ? const SizedBox(width:16,height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) : const Icon(Icons.refresh_rounded), label: Text('Güncellemeleri denetle'.tr()))),
+          SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _checking ? null : _manualCheck, icon: _checking ? const SizedBox(width:16,height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) : const Icon(Icons.refresh_rounded), label: Text('check_updates'.tr()))),
           if(_status!=null) Padding(padding: const EdgeInsets.only(top:8), child: Text(_status!, style: TextStyle(color: cs.primary, fontSize:12, fontWeight: FontWeight.w600))),
         ]))),
         const SizedBox(height: 12),
@@ -472,14 +480,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         Card(
           color: cs.primaryContainer.withOpacity(0.4),
           child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.info_rounded, color: Colors.white)), const SizedBox(width: 12), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Hakkında'.tr(), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), Text('İndir Gitsin', style: TextStyle(color: Colors.grey[700], fontSize: 12))])]),
+            Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.info_rounded, color: Colors.white)), const SizedBox(width: 12), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('about'.tr(), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), Text('app_name'.tr(), style: TextStyle(color: Colors.grey[700], fontSize: 12))])]),
             const SizedBox(height: 14),
-            Row(children: [CircleAvatar(radius: 28, backgroundColor: cs.primary, child: const Icon(Icons.person_rounded, color: Colors.white, size: 28)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Erhan Emir Bayram', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)), const SizedBox(height:2), Text('Geliştirici', style: TextStyle(color: Colors.grey[600], fontSize: 12)), const SizedBox(height:6), InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.link_rounded, size:14, color: cs.primary), const SizedBox(width:4), Text('github.com/ErhaEmir', style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize:12))]))]))]),
+            Row(children: [CircleAvatar(radius: 28, backgroundColor: cs.primary, child: const Icon(Icons.person_rounded, color: Colors.white, size: 28)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('developer_name'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)), const SizedBox(height:2), Text('developer'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)), const SizedBox(height:6), InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.link_rounded, size:14, color: cs.primary), const SizedBox(width:4), Text('github_dev_sub'.tr(), style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize:12))]))]))]),
             const SizedBox(height: 14),
             Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(14)), child: Column(children: [
-              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir/indir-gitsin'), child: Row(children: [Icon(Icons.code_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GitHub Deposu', style: const TextStyle(fontWeight: FontWeight.w700)), Text('ErhaEmir/indir-gitsin', style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
+              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir/indir-gitsin'), child: Row(children: [Icon(Icons.code_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('github_repo'.tr(), style: const TextStyle(fontWeight: FontWeight.w700)), Text('github_repo_sub'.tr(), style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
               const Divider(height:16),
-              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.person_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici GitHub', style: const TextStyle(fontWeight: FontWeight.w700)), Text('github.com/ErhaEmir', style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
+              InkWell(onTap: ()=> _openUrl('https://github.com/ErhaEmir'), child: Row(children: [Icon(Icons.person_rounded, color: cs.primary), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('github_dev'.tr(), style: const TextStyle(fontWeight: FontWeight.w700)), Text('github_dev_sub'.tr(), style: TextStyle(color: Colors.grey[600], fontSize:12))])), Icon(Icons.open_in_new_rounded, size:18, color: Colors.grey[600])])),
             ])),
             const SizedBox(height: 12),
             FutureBuilder<PackageInfo>(future: PackageInfo.fromPlatform(), builder: (c,s){ final v=s.data; return Text(v==null? 'Yükleniyor...': 'Sürüm ${v.version}+${v.buildNumber} • ${v.appName}', style: TextStyle(color: Colors.grey[600], fontSize:11), textAlign: TextAlign.center);}),
