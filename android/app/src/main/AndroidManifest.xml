@@ -14,7 +14,7 @@
     <application
         android:label="İndir Gitsin"
         android:name="${applicationName}"
-        android:icon="@android:mipmap/sym_def_app_icon"
+        android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
