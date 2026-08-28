@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>İndir Gitsin - Web Önizleme</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--red:#FF0A0A;--bg:#0F0F0F;--card:#1F1F1F;--muted:#aaa}
+*{box-sizing:border-box;font-family:Inter,system-ui,sans-serif}
+body{margin:0;background:#0F0F0F;color:#fff;min-height:100vh}
+a{color:inherit}
+.header{position:sticky;top:0;background:#0F0F0Fcc;backdrop-filter:blur(10px);border-bottom:1px solid #222;padding:14px 20px;display:flex;align-items:center;gap:12px;z-index:10}
+.logo{width:40px;height:40px;background:var(--red);border-radius:12px;display:grid;place-items:center;font-size:20px}
+.header h1{font-size:18px;margin:0;font-weight:800}
+.header span{font-size:12px;color:var(--muted)}
+.container{max-width:720px;margin:0 auto;padding:18px}
+.hero{background:linear-gradient(135deg,var(--red),#ff3b3b);border-radius:24px;padding:18px;display:flex;gap:14px;align-items:center}
+.hero h2{margin:0 0 4px;font-size:16px}
+.hero p{margin:0;font-size:13px;opacity:.9}
+.chips{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.chip{background:#fff2;border-radius:99px;padding:6px 10px;font-size:12px;font-weight:700;display:flex;gap:6px;align-items:center}
+.card{background:var(--card);border-radius:20px;padding:14px;margin-top:16px;border:1px solid #2a2a2a}
+.input-row{display:flex;gap:10px;align-items:center;background:#2a2a2a;border-radius:16px;padding:8px 8px 8px 14px}
+.input-row input{flex:1;background:transparent;border:0;color:#fff;outline:none;font-size:14px}
+.btn{background:var(--red);color:#fff;border:0;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sec{background:#333}
+.help{background:#3a2a00;border:1px solid #5a3d00;color:#ffcc66;border-radius:14px;padding:10px 12px;font-size:12px;margin-top:10px;display:flex;gap:8px;align-items:center}
+.error{background:#3a0a0a;border:1px solid #6a1a1a;color:#ffb4b4;border-radius:14px;padding:10px 12px;font-size:13px;margin-top:10px}
+.thumb{width:100%;height:220px;object-fit:cover;border-radius:16px;background:#111}
+.meta{display:flex;gap:10px;align-items:center;margin-top:10px;color:#ccc;font-size:13px}
+.title{font-weight:800;font-size:16px;line-height:1.3;margin-top:8px}
+.stream{border:1px solid #333;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;margin-top:10px;cursor:pointer;transition:.15s}
+.stream.selected{border-color:var(--red);background:#2a1212}
+.stream .icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:20px}
+.badge{font-size:11px;font-weight:800;color:#fff;border-radius:99px;padding:3px 8px}
+.progress{height:8px;background:#333;border-radius:99px;overflow:hidden;margin-top:12px}
+.progress i{display:block;height:100%;background:var(--red);width:0%}
+.empty{text-align:center;padding:30px 10px;color:#888}
+.empty .big{font-size:56px;opacity:.4}
+.note{color:#666;font-size:11px;text-align:center;margin:20px 0}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">⬇️</div>
+  <div><h1>İndir Gitsin</h1><span>YouTube & YouTube Music • Web Önizleme (APK olmadan test)</span></div>
+  <div style="margin-left:auto;font-size:11px;color:#888">v1.0.0</div>
+</div>
+
+<div class="container">
+  <div class="hero">
+    <div style="flex:1">
+      <h2>YouTube & Music İndirici</h2>
+      <p>Linki yapıştır veya YouTube'dan Paylaş → İndir Gitsin. Tarayıcıda dene, sonra APK kur.</p>
+      <div class="chips"><span class="chip">🎥 MP4</span><span class="chip">🎵 MP3</span><span class="chip">✦ 4K</span></div>
+    </div>
+    <div style="font-size:44px">▶️</div>
+  </div>
+
+  <div class="card">
+    <div class="input-row">
+      <span>🔗</span>
+      <input id="url" placeholder="https://www.youtube.com/watch?v= ..." />
+      <button class="btn sec" onclick="paste()">Yapıştır</button>
+      <button class="btn" id="getBtn" onclick="fetchInfo()">Getir</button>
+    </div>
+    <div class="help">↗ YouTube uygulamasında Paylaş → <b>İndir Gitsin</b> seçeneği gerçek APK'da görünür. Bu web önizlemede paylaşım simüle edilir.</div>
+    <div id="error" class="error" style="display:none"></div>
+  </div>
+
+  <div id="loading" class="card" style="display:none">⏳ Video bilgisi alınıyor...</div>
+  <div id="result"></div>
+
+  <div id="empty" class="card empty">
+    <div class="big">⬇️</div>
+    <div style="font-weight:800;color:#fff">Henüz bir video seçilmedi</div>
+    <div style="font-size:13px;margin-top:6px">Linki yukarıya yapıştır veya aşağıdaki demo linkleri dene</div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap">
+      <button class="btn sec" onclick="demo('https://www.youtube.com/watch?v=jNQXAC9IVRw')">Demo YouTube</button>
+      <button class="btn sec" onclick="demo('https://music.youtube.com/watch?v=jNQXAC9IVRw')">Demo Music</button>
+      <button class="btn sec" onclick="demo('https://youtu.be/jNQXAC9IVRw')">youtu.be kısa link</button>
+    </div>
+    <div style="font-size:12px;color:#666;margin-top:12px">Not: YouTube link algılama regex'i Flutter ile birebir aynı.</div>
+  </div>
+
+  <div class="note">İndirilenler gerçek uygulamada /Download/IndirGitsin klasörüne kaydedilir • Web önizlemede indirme simülasyonudur<br/>GitHub'a push edince otomatik APK release oluşur (.github/workflows/release.yml)</div>
+</div>
+
+<script>
+const re = /(?:youtube\.com\/watch\?v=|youtu\.be\/|music\.youtube\.com\/watch\?v=|m\.youtube\.com\/watch\?v=)([A-Za-z0-9_-]{11})/;
+function extractId(url){
+  const m = url.match(re);
+  if(m) return m[1];
+  try{ const u=new URL(url); const v=u.searchParams.get('v'); if(v&&v.length===11) return v; }catch(e){}
+  return null;
+}
+function isValid(url){ return !!extractId(url); }
+
+async function paste(){
+  try{ const t=await navigator.clipboard.readText(); document.getElementById('url').value=t; if(isValid(t)) fetchInfo(); }catch(e){ showError('Panoya erişim engellendi, manuel yapıştırın'); }
+}
+function demo(u){ document.getElementById('url').value=u; fetchInfo(); }
+function showError(msg){ const e=document.getElementById('error'); e.style.display='block'; e.textContent='⚠️ '+msg; }
+function hideError(){ document.getElementById('error').style.display='none'; }
+
+async function fetchInfo(){
+  hideError();
+  const url=document.getElementById('url').value.trim();
+  if(!url) return showError('Lütfen bir YouTube linki yapıştırın');
+  if(!isValid(url)) return showError('Geçersiz YouTube / YouTube Music linki. Örn: https://www.youtube.com/watch?v=XXXXXXXXXXX');
+  const id=extractId(url);
+  document.getElementById('loading').style.display='block';
+  document.getElementById('empty').style.display='none';
+  document.getElementById('result').innerHTML='';
+  // Gerçek YouTube oEmbed ile başlık/thumbnail çek (API'siz, CORS uyumlu)
+  try{
+    const oembed = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`;
+    // oEmbed CORS engeli olabilir, fallback thumbnail
+    let title = 'YouTube Video '+id;
+    let author = 'YouTube';
+    try{
+      const r=await fetch(oembed);
+      if(r.ok){ const j=await r.json(); title=j.title; author=j.author_name; }
+    }catch(e){}
+    const thumb=`https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+    // Sahte stream seçenekleri (gerçek uygulamada youtube_explode_dart ile doldurulur)
+    const streams=[
+      {label:'1080p (Video+Ses)', container:'MP4', size:'~85 MB', type:'muxed', badge:'Video+Ses', color:'#FF0A0A', icon:'🎬'},
+      {label:'720p (Video+Ses)', container:'MP4', size:'~45 MB', type:'muxed', badge:'Video+Ses', color:'#FF0A0A', icon:'🎬'},
+      {label:'480p (Video+Ses)', container:'MP4', size:'~22 MB', type:'muxed', badge:'Video+Ses', color:'#FF0A0A', icon:'🎬'},
+      {label:'1080p (sadece video)', container:'MP4', size:'~70 MB', type:'videoOnly', badge:'Sadece Video', color:'#ff8c00', icon:'🎥'},
+      {label:'128 kbps ses', container:'M4A', size:'~4 MB', type:'audioOnly', badge:'Sadece Ses', color:'#0a9e00', icon:'🎵'},
+      {label:'256 kbps ses (Music için ideal)', container:'M4A', size:'~7 MB', type:'audioOnly', badge:'Sadece Ses', color:'#0a9e00', icon:'🎵'},
+    ];
+    renderVideo({id,title,author,thumb,url,streams});
+  }catch(e){ showError('Video bilgisi alınamadı: '+e.message); }
+  finally{ document.getElementById('loading').style.display='none'; }
+}
+
+let selected=0;
+function renderVideo(v){
+  const streamsHtml=v.streams.map((s,i)=>`
+    <div class="stream ${i===selected?'selected':''}" onclick="selectStream(${i})">
+      <div class="icon" style="background:${s.color}22;color:${s.color}">${s.icon}</div>
+      <div style="flex:1">
+        <div style="font-weight:800">${s.label}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <span class="badge" style="background:${s.color}">${s.badge}</span>
+          <span style="font-size:12px;color:#aaa">${s.container} • ${s.size}</span>
+        </div>
+      </div>
+      <input type="radio" ${i===selected?'checked':''} />
+    </div>
+  `).join('');
+  document.getElementById('result').innerHTML=`
+    <div class="card">
+      <img class="thumb" src="${v.thumb}" onerror="this.src='https://via.placeholder.com/640x360?text=Thumbnail'" />
+      <div class="title">${v.title}</div>
+      <div class="meta">👤 ${v.author} • ⏱️ ~3:45 • 👁️ ~1.2M • ID: ${v.id}</div>
+      <div style="margin-top:12px;font-weight:800">İndirme Seçenekleri</div>
+      <div style="font-size:12px;color:#888">YouTube & YouTube Music aynı kalitede indirilir</div>
+      ${streamsHtml}
+      <div id="progWrap" style="display:none"><div class="progress"><i id="bar"></i></div><div id="progTxt" style="font-size:12px;color:#aaa;margin-top:6px;text-align:center">0% indiriliyor...</div></div>
+      <button class="btn" style="width:100%;margin-top:14px;padding:14px" onclick="downloadSim()">⬇️ Seçili Kaliteyi İndir</button>
+      <div id="done" style="display:none;margin-top:10px;background:#0a2a12;border:1px solid #1a5a2a;color:#8f8;border-radius:12px;padding:10px;text-align:center">✅ İndirme tamamlandı (simülasyon) • Gerçek APK'da /Download/IndirGitsin klasörüne kaydedilir</div>
+      <div style="font-size:11px;color:#666;margin-top:8px">Seçili: ${v.streams[selected].label} • Bu önizlemede gerçek indirme yapılmaz, Flutter APK'da dio ile indirilir</div>
+    </div>
+  `;
+}
+function selectStream(i){ selected=i; const url=document.getElementById('url').value; if(url) fetchInfo(); }
+async function downloadSim(){
+  const wrap=document.getElementById('progWrap'); const bar=document.getElementById('bar'); const txt=document.getElementById('progTxt');
+  wrap.style.display='block'; let p=0;
+  const iv=setInterval(()=>{ p+=8+Math.random()*12; if(p>=100){p=100;clearInterval(iv);document.getElementById('done').style.display='block'; txt.textContent='100% tamamlandı';} bar.style.width=p+'%'; txt.textContent=Math.round(p)+'% indiriliyor...'; },180);
+}
+// URL param ile otomatik doldur (paylaşım simülasyonu)
+const params=new URLSearchParams(location.search);
+if(params.get('url')){ document.getElementById('url').value=params.get('url'); fetchInfo(); }
+</script>
+</body>
+</html>
