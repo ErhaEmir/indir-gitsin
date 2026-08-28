@@ -4,8 +4,8 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.2.0 <4.0.0'
-  flutter: ">=3.16.0"
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
@@ -25,11 +25,11 @@ dependencies:
   # İndirme & ağ
   dio: ^5.7.0
   # UI
-  google_fonts: ^6.2.1
+  google_fonts: ^6.1.0
   shimmer: ^3.0.0
-  lottie: ^3.3.1
-  cached_network_image: ^3.4.1
-  flutter_svg: ^2.0.17
+  lottie: ^3.1.2
+  cached_network_image: ^3.3.1
+  flutter_svg: ^2.0.10+1
   # Diğer
   url_launcher: ^6.2.6
   intl: ^0.19.0
