@@ -69,18 +69,24 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _listenShareIntent() {
-    // Uygulama kapalıyken gelen paylaşım
-    ReceiveSharingIntent.instance.getInitialText().then((value) {
-      if (value != null && YoutubeService.isValidYoutubeUrl(value)) {
-        _linkCtrl.text = value;
-        _fetch();
+    // Uygulama kapalıyken gelen paylaşım - receive_sharing_intent 1.8.x API
+    ReceiveSharingIntent.instance.getInitialMedia().then((List<SharedMediaFile> media) {
+      if (media.isNotEmpty) {
+        final text = media.first.path;
+        if (YoutubeService.isValidYoutubeUrl(text)) {
+          _linkCtrl.text = text;
+          _fetch();
+        }
       }
     });
     // Uygulama açıkken gelen paylaşım
-    _intentSub = ReceiveSharingIntent.instance.getTextStream().listen((value) {
-      if (YoutubeService.isValidYoutubeUrl(value)) {
-        _linkCtrl.text = value;
-        _fetch();
+    _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((List<SharedMediaFile> media) {
+      if (media.isNotEmpty) {
+        final text = media.first.path;
+        if (YoutubeService.isValidYoutubeUrl(text)) {
+          _linkCtrl.text = text;
+          _fetch();
+        }
       }
     }, onError: (e) => debugPrint('intent error $e'));
   }
