@@ -21,12 +21,23 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.x'
+          flutter-version: '3.24.5'
           channel: 'stable'
           cache: true
 
       - name: Install deps
         run: flutter pub get
+
+      - name: Ensure Android scaffold (flutter create if missing)
+        run: |
+          if [ ! -f android/settings.gradle ] || [ ! -f android/gradle/wrapper/gradle-wrapper.properties ]; then
+            echo "Android scaffold missing, regenerating..."
+            flutter create --platforms=android . --project-name indir_gitsin --org com.indirgitsin
+            # restore custom AndroidManifest with share intent
+            git checkout -- android/app/src/main/AndroidManifest.xml || true
+          fi
+          cat android/settings.gradle || true
+          cat android/app/build.gradle || true
 
       - name: Analyze
         run: flutter analyze || true
@@ -58,7 +69,7 @@ jobs:
             - Branch: ${{ github.ref_name }}
             - YouTube & YouTube Music destekli
             ### Kurulum
-            `app-universal-release.apk` dosyasını indir ve kur.
+            `app-release.apk` dosyasını indir ve kur. Alternatif: `app-arm64-v8a-release.apk` vb.
           files: |
             build/app/outputs/flutter-apk/app-*-release.apk
             build/app/outputs/flutter-apk/app-release.apk
