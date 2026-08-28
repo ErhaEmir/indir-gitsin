@@ -17,15 +17,10 @@ tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
 
-// Kotlin/Java 17 uyumu - tüm pluginler için JVM target'i eşitle
+// JVM target uyumu - receive_sharing_intent plugin 1.8/17 mismatch fix
+// Plugin icinde Kotlin 17 vs Java 1.8 -> ikisini 1.8'de esitle
 allprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions.jvmTarget = "17"
-    }
-}
-subprojects {
-    tasks.withType(JavaCompile).configureEach {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        kotlinOptions.jvmTarget = "1.8"
     }
 }
