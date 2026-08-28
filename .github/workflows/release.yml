@@ -30,11 +30,19 @@ jobs:
 
       - name: Patch plugins for JDK17 (JVM target mismatch fix)
         run: |
-          echo "Patching receive_sharing_intent and other plugins..."
-          find ~/.pub-cache -path "*receive_sharing_intent*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; -exec sed -i 's/"1.8"/"17"/g' {} \; -exec cat {} \; 2>&1 | head -80
-          find ~/.pub-cache -path "*device_info_plus*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; -exec sed -i 's/"1.8"/"17"/g' {} \; 2>&1 | head -20
-          find ~/.pub-cache -path "*path_provider*android/build.gradle" -print -exec sed -i 's/VERSION_1_8/VERSION_17/g' {} \; 2>&1 | head -20
-          echo "Patch done"
+          echo "Patching plugins for JDK17..."
+          PUB_CACHE=$(flutter pub cache dir 2>/dev/null || echo "$HOME/.pub-cache")
+          echo "PUB_CACHE=$PUB_CACHE"
+          ls -R "$PUB_CACHE/hosted/pub.dev" 2>&1 | head -20
+          find "$PUB_CACHE" -name "build.gradle" 2>/dev/null | xargs grep -l "VERSION_1_8" 2>/dev/null | head -20
+          find "$PUB_CACHE" -name "build.gradle" -exec grep -l "VERSION_1_8" {} \; 2>/dev/null | while read f; do
+            echo "Patching $f"
+            sed -i 's/VERSION_1_8/VERSION_17/g' "$f"
+            sed -i 's/"1.8"/"17"/g' "$f"
+            sed -i "s/'1.8'/'17'/g" "$f"
+          done
+          echo "Patch done - verifying receive_sharing_intent:"
+          find "$PUB_CACHE" -path "*receive_sharing_intent*" -name "build.gradle" -exec cat {} \; 2>&1 | head -60
 
       - name: Ensure Android scaffold (flutter create if missing)
         run: |
