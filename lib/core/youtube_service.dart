@@ -160,21 +160,31 @@ class YoutubeService {
     return [];
   }
 
-  // Trend (Keşfet)
+  // Trend (Keşfet) - 2 Piped instance dene, yoksa boş dön
   Future<List<Map<String, dynamic>>> getTrending() async {
-    try {
-      final r = await _dio.get('https://pipedapi.kavin.rocks/trending?region=TR');
-      if (r.statusCode == 200) {
-        final list = r.data as List;
-        return list.take(20).map((e) => {
-          'id': e['url']?.toString().split('v=').last ?? '',
-          'title': e['title'] ?? '',
-          'thumbnail': e['thumbnail'] ?? '',
-          'author': e['uploaderName'] ?? '',
-          'views': e['views'] ?? 0,
-        }).toList();
-      }
-    } catch (_) {}
+    const endpoints = [
+      'https://pipedapi.kavin.rocks/trending?region=TR',
+      'https://pipedapi.adminforge.de/trending?region=TR',
+      'https://piped-api.lunar.icu/trending?region=TR',
+    ];
+    for (final ep in endpoints) {
+      try {
+        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 8)));
+        if (r.statusCode == 200) {
+          final data = r.data;
+          final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
+          if (list.isNotEmpty) {
+            return list.take(20).map((e) => {
+              'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? ''),
+              'title': e['title'] ?? '',
+              'thumbnail': e['thumbnail'] ?? e['thumbnailUrl'] ?? '',
+              'author': e['uploaderName'] ?? e['uploader'] ?? '',
+              'views': e['views'] ?? 0,
+            }).where((m)=> (m['id'] as String).length==11).toList();
+          }
+        }
+      } catch (_) { continue; }
+    }
     return [];
   }
 

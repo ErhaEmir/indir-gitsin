@@ -690,17 +690,34 @@ class FilesTabState extends State<FilesTab> {
   }
   Future<void> _load() async {
     try {
-      final dir = await _getDir();
-      if (await dir.exists()) { 
-        final f = await dir.list().toList(); 
-        f.sort((a,b){
-          if (_sort=='name') return a.path.compareTo(b.path);
-          if (_sort=='size') return (b as File).lengthSync().compareTo((a as File).lengthSync());
-          return b.statSync().modified.compareTo(a.statSync().modified);
-        });
-        setState(()=>_files=f); 
-      } else { setState(()=>_files=[]); }
-    } catch(_){}
+      final base = Directory('/storage/emulated/0/Download/IndirGitsin');
+      List<FileSystemEntity> all = [];
+      if (await base.exists()) {
+        final baseFiles = await base.list(recursive: true).where((e)=> e is File).toList();
+        all.addAll(baseFiles);
+      }
+      final custom = await _getDir();
+      if (custom.path != base.path && await custom.exists()) {
+        final customFiles = await custom.list(recursive: true).where((e)=> e is File).toList();
+        for(final f in customFiles){ if(!all.any((e)=> e.path==f.path)) all.add(f); }
+      }
+      // Eğer hiç yoksa custom'ı da dene (eski dosyalar base'de olabilir)
+      if (all.isEmpty) {
+        final dir = await _getDir();
+        if (await dir.exists()) {
+          final f = await dir.list(recursive: true).where((e)=> e is File).toList();
+          all = f;
+        }
+      }
+      all.sort((a,b){
+        if (_sort=='name') return a.path.compareTo(b.path);
+        if (_sort=='size') {
+          try { return (b as File).lengthSync().compareTo((a as File).lengthSync()); } catch(_){ return 0; }
+        }
+        try { return b.statSync().modified.compareTo(a.statSync().modified); } catch(_){ return 0; }
+      });
+      setState(()=>_files=all);
+    } catch(_){ setState(()=>_files=[]); }
   }
   Future<void> _rename(File f) async {
     final ctrl = TextEditingController(text: f.path.split('/').last);
@@ -876,6 +893,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             final p=s.data; final autoClip = p?.getBool('auto_clipboard') ?? true;
             final vib = p?.getBool('haptic') ?? true;
             final notif = p?.getBool('notify_enabled') ?? true;
+            final autoFolder = p?.getBool('auto_folder') ?? true;
+            final defaultFormat = p?.getString('default_format') ?? 'mp4';
             return Column(children: [
               SwitchListTile(value: autoClip, title: const Text('Panoya otomatik bak'), subtitle: const Text('Link kopyalayınca direkt hazırla', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_clipboard', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
               SwitchListTile(value: vib, title: const Text('Titreşim geri bildirimi'), subtitle: const Text('Dokunmalarda haptic', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('haptic', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
@@ -885,6 +904,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 if(v) { await Permission.notification.request(); }
                 (c as Element).markNeedsBuild(); 
               }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: autoFolder, title: const Text('Otomatik klasör ayır'), subtitle: const Text('MP3 → Müzikler, MP4 → Videolar', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              const SizedBox(height: 8),
+              Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), const Text('Varsayılan format', style: TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: const [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); })]),
+
               const SizedBox(height: 4),
               SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
                 final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi, izleme geçmişi ve favoriler silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));

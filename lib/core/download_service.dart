@@ -83,12 +83,29 @@ class DownloadService {
     final path = p.join(dir, '$safe.$ext');
     _cancelToken = CancelToken();
 
-    // MP3/WEBM için direkt explode fallback daha güvenilir (YouTube audio throttling)
-    if ((ext == 'mp3' || ext == 'webm') && videoId != null && streamTag != null) {
+    // MP3/WEBM için Piped öncelikli (Notube gibi) - en güvenilir
+    if ((ext == 'mp3' || ext == 'webm' || streamTag.startsWith('piped-')) && videoId != null) {
       try {
-        return await _downloadViaExplode(videoId: videoId, streamTag: streamTag, fileName: fileName, ext: ext, onProgress: onProgress);
+        final pipedUrl = await _getPipedUrl(videoId, ext);
+        if (pipedUrl != null) {
+          debugPrint('Piped $ext URL bulundu, dio ile indiriliyor');
+          final dir = await getDownloadPath(ext: ext);
+          final path = p.join(dir, '${sanitize(fileName)}.$ext');
+          _cancelToken = CancelToken();
+          await _dio.download(pipedUrl, path, cancelToken: _cancelToken, onReceiveProgress: onProgress, deleteOnError: true);
+          final f = File(path);
+          if (await f.exists() && await f.length() > 1024) return path;
+        }
       } catch (e) {
-        debugPrint('MP3/WEBM explode ilk deneme hata, dio fallback: $e');
+        debugPrint('Piped $ext indirme hata, fallback: $e');
+      }
+      // Piped olmadıysa explode dene
+      if (videoId != null && streamTag != null) {
+        try {
+          return await _downloadViaExplode(videoId: videoId, streamTag: streamTag, fileName: fileName, ext: ext, onProgress: onProgress);
+        } catch (e) {
+          debugPrint('MP3/WEBM explode hata, dio fallback: $e');
+        }
       }
     }
 
@@ -160,6 +177,29 @@ class DownloadService {
       throw Exception('İndirme hatası (${code ?? lastError.type}): ${lastError.message}');
     }
     throw Exception('İndirme başarısız - lisans korumalı olabilir, MP4 ile deneyin');
+  }
+
+  Future<String?> _getPipedUrl(String videoId, String ext) async {
+    try {
+      final r = await Dio().get('https://pipedapi.kavin.rocks/streams/$videoId', options: Options(receiveTimeout: const Duration(seconds: 8)));
+      if (r.statusCode == 200) {
+        final data = r.data as Map<String, dynamic>;
+        if (ext == 'mp3') {
+          final list = data['audioStreams'] as List? ?? [];
+          if (list.isNotEmpty) {
+            // en yüksek bitrate
+            list.sort((a,b)=> (b['bitrate'] as int? ?? 0).compareTo(a['bitrate'] as int? ?? 0));
+            return (list.first as Map)['url'] as String?;
+          }
+        } else if (ext == 'webm') {
+          final list = data['videoStreams'] as List? ?? [];
+          final webm = list.where((e)=> (e['mimeType'] as String? ?? '').contains('webm')).toList();
+          if (webm.isNotEmpty) return (webm.first as Map)['url'] as String?;
+          if (list.isNotEmpty) return (list.first as Map)['url'] as String?;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<String?> _resolveFreshUrl(String videoId, String tag) async {
