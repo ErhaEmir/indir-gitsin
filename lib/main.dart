@@ -503,11 +503,24 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
               const SizedBox(height: 10),
               if (_error != null)
                 Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: cs.errorContainer, borderRadius: BorderRadius.circular(16)), child: Row(children: [Icon(Icons.error_outline_rounded, color: cs.onErrorContainer), const SizedBox(width: 8), Expanded(child: Text(_error!, style: TextStyle(color: cs.onErrorContainer))), TextButton(onPressed: _fetch, child: Text('retry'.tr()))])),
-              if (_loading) ...[const SizedBox(height: 16), _shimmer(isDark)],
+              if (_loading) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(minHeight: 4, borderRadius: BorderRadius.all(Radius.circular(99))),
+                const SizedBox(height: 8),
+                Text('Video çözümleniyor...', style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                _shimmer(isDark),
+              ],
               if (_video != null) ...[
                 const SizedBox(height: 16),
                 _videoCard(context),
                 const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(color: cs.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(14), border: Border.all(color: cs.primary.withOpacity(0.2))),
+                  child: Row(children: [Icon(Icons.download_done_rounded, color: cs.primary), const SizedBox(width: 8), Text('Video hazır - indirme seçenekleri', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onPrimaryContainer, fontSize: 13)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(99)), child: const Text('HAZIR', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)))]),
+                ),
+                const SizedBox(height: 10),
                 Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('add_favorite'.tr()), const Spacer(), Text('options_count'.tr(namedArgs: {'count': '${_video!.streams.length}'}), style: const TextStyle(color: Colors.grey))]),
                 const SizedBox(height: 8),
                 // Hızlı profiller + 3'lü format sekmeleri

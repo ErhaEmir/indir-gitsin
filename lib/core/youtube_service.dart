@@ -212,6 +212,35 @@ class YoutubeService {
       ));
     }
 
+    // Lisans / DRM kontrolü - hiç stream yoksa
+    if (streams.isEmpty) {
+      // Video açıklaması veya başlıkta lisans ipucu var mı kontrol et
+      final desc = video.description.toLowerCase();
+      if (desc.contains('lisans') || desc.contains('copyright') || video.title.toLowerCase().contains('official')) {
+        // yine de deneyelim, belki sadece manifest boş
+      }
+      throw Exception('Bu video indirilemiyor (lisans korumalı, canlı yayın veya bölge kısıtlaması olabilir). Farklı bir video deneyin.');
+    }
+
+    // MP3 için sentetik seçenek ekle - en iyi audioOnly'yi MP3 olarak sun
+    final audioOnly = streams.where((s)=> s.type=='audioOnly').toList();
+    if (audioOnly.isNotEmpty) {
+      final bestAudio = audioOnly.reduce((a,b)=> (a.bitrate??0) > (b.bitrate??0) ? a : b);
+      final mp3Exists = streams.any((s)=> s.type=='audioOnly' && s.container.toLowerCase()=='mp3');
+      if (!mp3Exists) {
+        streams.add(StreamOption(
+          tag: bestAudio.tag,
+          qualityLabel: '${(bestAudio.bitrate ?? 128000) ~/ 1000} kbps MP3',
+          container: 'mp3',
+          bitrate: bestAudio.bitrate,
+          sizeLabel: bestAudio.sizeLabel,
+          type: 'audioOnly',
+          url: bestAudio.url,
+          audioCodec: 'mp3',
+        ));
+      }
+    }
+
     // En yüksek kalite önce
     streams.sort((a, b) {
       const order = {'muxed': 0, 'videoOnly': 1, 'audioOnly': 2};
