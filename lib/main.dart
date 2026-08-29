@@ -12,6 +12,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
@@ -150,9 +151,13 @@ class HomeTab extends ConsumerStatefulWidget {
 
 class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin {
   final _linkCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   VideoInfo? _video;
+  List<VideoInfo> _playlist = [];
+  List<VideoInfo> _searchResults = [];
   bool _loading = false;
+  bool _searching = false;
   String? _error;
   StreamSubscription? _intentSub;
   double _progress = 0;
@@ -225,6 +230,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
     _heroCtrl.dispose();
     _intentSub?.cancel();
     _linkCtrl.dispose();
+    _searchCtrl.dispose();
     _scrollCtrl.dispose();
     ref.read(youtubeServiceProvider).close();
     super.dispose();
@@ -233,6 +239,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   Future<void> _fetch() async {
     final url = _linkCtrl.text.trim();
     if (url.isEmpty) { setState(() => _error = 'please_paste'.tr()); return; }
+    if (YoutubeService.isPlaylistUrl(url)) { await _fetchPlaylist(url); return; }
     if (!YoutubeService.isValidYoutubeUrl(url)) { setState(() => _error = 'invalid_link'.tr()); return; }
     StorageService.addSearch(url);
     HapticFeedback.lightImpact();
@@ -249,6 +256,63 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _search() async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _error = null; });
+    try {
+      final res = await ref.read(youtubeServiceProvider).search(q).timeout(const Duration(seconds: 10));
+      setState(() { _searchResults = res; });
+    } catch (e) { setState(() => _error = 'Arama hatası: $e'); }
+    finally { setState(() => _searching = false); }
+  }
+
+  Future<void> _fetchPlaylist(String url) async {
+    setState(() { _loading = true; _error = null; _playlist = []; });
+    try {
+      final list = await ref.read(youtubeServiceProvider).getPlaylistVideos(url).timeout(const Duration(seconds: 15));
+      setState(() { _playlist = list; });
+      if (list.isNotEmpty) { _linkCtrl.text = 'https://www.youtube.com/watch?v=${list.first.id}'; await _fetch(); }
+    } catch (e) { setState(() => _error = 'Playlist alınamadı: $e'); }
+    finally { setState(() => _loading = false); }
+  }
+
+  Future<void> _downloadAllPlaylist() async {
+    for (final v in _playlist) {
+      try {
+        final svc = ref.read(downloadServiceProvider);
+        final info = v;
+        final stream = info.streams.firstWhere((s) => s.type=='muxed', orElse: ()=> info.streams.first);
+        await svc.download(url: stream.url, fileName: info.title, ext: stream.type=='audioOnly'?'m4a':'mp4', videoId: info.id, streamTag: stream.tag, onProgress: (_, __){});
+        StorageService.addHistory({'id': info.id, 'title': info.title, 'thumbnail': info.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${info.id}', 'path': '', 'date': DateTime.now().toIso8601String()});
+      } catch (_) {}
+    }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist indirildi (${_playlist.length})'), behavior: SnackBarBehavior.floating));
+  }
+
+  void _applyProfile(String p) {
+    if (_video == null) return;
+    if (p == 'mp3') {
+      final s = _video!.streams.where((e)=> e.type=='audioOnly').toList()..sort((a,b)=> (b.bitrate??0).compareTo(a.bitrate??0));
+      if(s.isNotEmpty) setState(()=> _selected = s.first);
+    } else if (p == 'best') {
+      final s = _video!.streams.where((e)=> e.type=='muxed').toList()..sort((a,b)=> (b.height??0).compareTo(a.height??0));
+      if(s.isNotEmpty) setState(()=> _selected = s.first);
+    } else if (p == '4k') {
+      final s = _video!.streams.where((e)=> e.height!=null && e.height!>=2160).toList();
+      if(s.isNotEmpty) setState(()=> _selected = s.first);
+    }
+    HapticFeedback.selectionClick();
+  }
+
+  Future<void> _downloadSubtitle() async {
+    if (_video==null) return;
+    final caps = await ref.read(youtubeServiceProvider).getCaptionTracks(_video!.id);
+    if (caps.isEmpty) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Altyazı bulunamadı'))); return;}
+    // İlk altyazıyı indir (demo)
+    if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Altyazı seçenekleri: ${caps.join(', ')}'), behavior: SnackBarBehavior.floating));
   }
 
   Future<void> _download() async {
@@ -316,6 +380,30 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
                   ]),
                 ),
               ),
+              // Arama (in-app YouTube search)
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'YouTube\'de ara...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: IconButton(icon: const Icon(Icons.send_rounded), onPressed: _search),
+                  filled: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                ),
+                onSubmitted: (_) => _search(),
+              ),
+              if (_searching) const Padding(padding: EdgeInsets.only(top: 6), child: LinearProgressIndicator()),
+              if (_searchResults.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text('Arama sonuçları', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                ..._searchResults.map((v) => Card(child: ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, width: 80, height: 45, fit: BoxFit.cover)), title: Text(v.title, maxLines: 1, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)), subtitle: Text(v.author, style: TextStyle(fontSize: 11)), onTap: () { _linkCtrl.text = 'https://www.youtube.com/watch?v=${v.id}'; setState(()=> _searchResults=[]); _fetch(); }))),
+              ],
+              if (_playlist.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Card(color: Theme.of(context).colorScheme.secondaryContainer, child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [Row(children: [const Icon(Icons.playlist_play_rounded), const SizedBox(width: 8), Text('Playlist • ${_playlist.length} video', style: const TextStyle(fontWeight: FontWeight.w800)), const Spacer(), FilledButton.icon(onPressed: _downloadAllPlaylist, icon: const Icon(Icons.download_rounded), label: const Text('Tümünü indir'))]), const SizedBox(height: 8), SizedBox(height: 120, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: _playlist.length, itemBuilder: (_, i) { final v = _playlist[i]; return Container(width: 160, margin: const EdgeInsets.only(right: 8), child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, height: 80, width: 160, fit: BoxFit.cover)), const SizedBox(height: 4), Text(v.title, maxLines: 2, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))])); }))]))),
+              ],
               const SizedBox(height: 18),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -354,6 +442,14 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
                 const SizedBox(height: 12),
                 Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('add_favorite'.tr()), const Spacer(), Text('options_count'.tr(namedArgs: {'count': '${_video!.streams.length}'}), style: const TextStyle(color: Colors.grey))]),
                 const SizedBox(height: 8),
+                // Hızlı profiller
+                Wrap(spacing: 8, runSpacing: 6, children: [
+                  ActionChip(label: Text('En iyi MP4'), avatar: const Icon(Icons.hd_rounded, size:16), onPressed: ()=> _applyProfile('best')),
+                  ActionChip(label: const Text('MP3 256k'), avatar: const Icon(Icons.music_note_rounded, size:16), onPressed: ()=> _applyProfile('mp3')),
+                  ActionChip(label: const Text('4K'), avatar: const Icon(Icons.high_quality_rounded, size:16), onPressed: ()=> _applyProfile('4k')),
+                  ActionChip(label: Text('Altyazı'), avatar: const Icon(Icons.subtitles_rounded, size:16), onPressed: _downloadSubtitle),
+                ]),
+                const SizedBox(height: 8),
                 ..._video!.streams.asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
                 if (_downloading) LinearProgressIndicator(value: _progress, borderRadius: BorderRadius.circular(99), minHeight: 8),
@@ -384,22 +480,74 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   Widget _empty(BuildContext c) => Column(children: [Icon(Icons.download_for_offline_rounded, size: 64, color: Theme.of(c).colorScheme.primary.withOpacity(0.3)), const SizedBox(height: 10), Text('ready'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)), Text('empty_hint'.tr(), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600])), const SizedBox(height: 12), Wrap(spacing: 8, children: [ActionChip(label: Text('Demo'), onPressed: (){ _linkCtrl.text='https://www.youtube.com/watch?v=jNQXAC9IVRw'; _fetch();}), ActionChip(label: Text('Music'), onPressed: (){ _linkCtrl.text='https://music.youtube.com/watch?v=jNQXAC9IVRw'; _fetch();})])]);
 }
 
-// FILES TAB
+// FILES TAB - dosya yönetimi + depolama seçici
 class FilesTab extends StatefulWidget { const FilesTab({super.key}); @override State<FilesTab> createState()=> _FilesTabState();}
 class _FilesTabState extends State<FilesTab> {
   List<FileSystemEntity> _files = [];
+  String _sort = 'date'; // date / size / name
   @override void initState(){ super.initState(); _load(); }
+  Future<Directory> _getDir() async {
+    final prefs = await SharedPreferences.getInstance();
+    final custom = prefs.getString('custom_download_path');
+    if (custom != null && custom.isNotEmpty) return Directory(custom);
+    return Directory('/storage/emulated/0/Download/IndirGitsin');
+  }
   Future<void> _load() async {
     try {
-      final dir = Directory('/storage/emulated/0/Download/IndirGitsin');
-      if (await dir.exists()) { final f = await dir.list().toList(); setState(()=>_files=f..sort((a,b)=> b.statSync().modified.compareTo(a.statSync().modified))); }
+      final dir = await _getDir();
+      if (await dir.exists()) { 
+        final f = await dir.list().toList(); 
+        f.sort((a,b){
+          if (_sort=='name') return a.path.compareTo(b.path);
+          if (_sort=='size') return (b as File).lengthSync().compareTo((a as File).lengthSync());
+          return b.statSync().modified.compareTo(a.statSync().modified);
+        });
+        setState(()=>_files=f); 
+      } else { setState(()=>_files=[]); }
     } catch(_){}
   }
+  Future<void> _rename(File f) async {
+    final ctrl = TextEditingController(text: f.path.split('/').last);
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('Yeniden adlandır'), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Kaydet'))]));
+    if (ok==true && ctrl.text.isNotEmpty) { final dir = (await _getDir()).path; await f.rename('$dir/${ctrl.text}'); _load(); }
+  }
+  Future<void> _delete(File f) async {
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Silinsin mi?'), content: Text(f.path.split('/').last), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
+    if (ok==true) { await f.delete(); _load(); }
+  }
+  Future<void> _pickStorage() async {
+    final ctrl = TextEditingController(text: (await _getDir()).path);
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Depolama Yeri'), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: ctrl, decoration: const InputDecoration(hintText: '/storage/emulated/0/Download/IndirGitsin')), const SizedBox(height:8), const Text('SD kart yolu girebilirsin', style: TextStyle(fontSize:11, color: Colors.grey))]), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Kaydet'))]));
+    if (ok==true) { final p=await SharedPreferences.getInstance(); await p.setString('custom_download_path', ctrl.text.trim()); _load(); }
+  }
   @override Widget build(BuildContext context){
-    return Scaffold(appBar: AppBar(title: Text('files'.tr())), body: _files.isEmpty ? Center(child: Text('no_downloads'.tr())) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
-      final f = _files[i] as File; final name = f.path.split('/').last; final isVideo = name.endsWith('.mp4');
-      return ListTile(leading: Icon(isVideo? Icons.videocam_rounded: Icons.music_note_rounded, color: Theme.of(context).colorScheme.primary), title: Text(name, maxLines:1, overflow: TextOverflow.ellipsis), subtitle: Text('${(f.lengthSync()/1024/1024).toStringAsFixed(1)} MB'), trailing: IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: (){ final isVid = name.endsWith('.mp4')||name.endsWith('.mkv'); if(isVid) Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))); else OpenFilex.open(f.path);}), onTap: ()=> OpenFilex.open(f.path));
-    })));
+    return Scaffold(
+      appBar: AppBar(title: Text('files'.tr()), actions: [
+        PopupMenuButton<String>(onSelected: (v){ if(v=='storage') _pickStorage(); else { setState(()=> _sort=v); _load(); }}, itemBuilder: (_)=> [
+          const PopupMenuItem(value:'date', child: Text('Tarihe göre')),
+          const PopupMenuItem(value:'size', child: Text('Boyuta göre')),
+          const PopupMenuItem(value:'name', child: Text('İsme göre')),
+          const PopupMenuDivider(),
+          const PopupMenuItem(value:'storage', child: Row(children: [Icon(Icons.folder_open_rounded, size:16), SizedBox(width:8), Text('Depolama yeri seç')])),
+        ]),
+      ]),
+      body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), TextButton(onPressed: _load, child: const Text('Yenile'))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
+        final f = _files[i] as File; final name = f.path.split('/').last; final isVideo = name.endsWith('.mp4') || name.endsWith('.mkv');
+        return ListTile(
+          leading: Icon(isVideo? Icons.videocam_rounded: Icons.music_note_rounded, color: Theme.of(context).colorScheme.primary),
+          title: Text(name, maxLines:1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${(f.lengthSync()/1024/1024).toStringAsFixed(1)} MB • ${f.statSync().modified.toString().substring(0,16)}'),
+          trailing: PopupMenuButton<String>(onSelected: (v) async {
+            if(v=='play'){ if(isVideo) Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))); else OpenFilex.open(f.path); }
+            else if(v=='share'){ await Share.shareXFiles([XFile(f.path)]); }
+            else if(v=='rename') await _rename(f);
+            else if(v=='delete') await _delete(f);
+          }, itemBuilder: (_)=> [const PopupMenuItem(value:'play', child: Text('Oynat/Aç')), const PopupMenuItem(value:'share', child: Text('Paylaş')), const PopupMenuItem(value:'rename', child: Text('Yeniden adlandır')), const PopupMenuItem(value:'delete', child: Text('Sil'))]),
+          onTap: ()=> isVideo ? Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))) : OpenFilex.open(f.path),
+          onLongPress: ()=> showModalBottomSheet(context: context, builder: (_)=> Wrap(children: [ListTile(leading: const Icon(Icons.edit_rounded), title: const Text('Yeniden adlandır'), onTap: (){ Navigator.pop(context); _rename(f);}), ListTile(leading: const Icon(Icons.share_rounded), title: const Text('Paylaş'), onTap: ()async{ Navigator.pop(context); await Share.shareXFiles([XFile(f.path)]);}), ListTile(leading: const Icon(Icons.delete_rounded, color: Colors.red), title: const Text('Sil', style: TextStyle(color: Colors.red)), onTap: (){ Navigator.pop(context); _delete(f);})])),
+        );
+      })),
+    );
   }
 }
 

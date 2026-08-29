@@ -81,7 +81,51 @@ class YoutubeService {
     return null;
   }
 
-  static bool isValidYoutubeUrl(String url) => extractVideoId(url) != null;
+  static bool isValidYoutubeUrl(String url) => extractVideoId(url) != null || isPlaylistUrl(url);
+
+  // Playlist desteği
+  static final _playlistRegex = RegExp(r'[?&]list=([A-Za-z0-9_-]+)');
+  static String? extractPlaylistId(String url) {
+    final m = _playlistRegex.firstMatch(url);
+    return m?.group(1);
+  }
+  static bool isPlaylistUrl(String url) => extractPlaylistId(url) != null;
+
+  Future<List<VideoInfo>> getPlaylistVideos(String playlistUrl) async {
+    final pid = extractPlaylistId(playlistUrl);
+    if (pid == null) throw Exception('Geçersiz playlist');
+    final playlist = await _yt.playlists.get(pid).timeout(const Duration(seconds: 8));
+    final videos = await _yt.playlists.getVideos(pid).toList();
+    // İlk 20 video için bilgi al (hız için)
+    final out = <VideoInfo>[];
+    for (final v in videos.take(20)) {
+      try {
+        final info = await getVideoInfo('https://www.youtube.com/watch?v=${v.id.value}');
+        out.add(info);
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  // Arama
+  Future<List<VideoInfo>> search(String query) async {
+    final res = await _yt.search.search(query);
+    final out = <VideoInfo>[];
+    for (final e in res.take(10)) {
+      if (e is Video) {
+        try { out.add(await getVideoInfo('https://www.youtube.com/watch?v=${e.id.value}')); } catch (_){}
+      }
+    }
+    return out;
+  }
+
+  // Altyazı
+  Future<List<String>> getCaptionTracks(String videoId) async {
+    try {
+      final trackManifest = await _yt.videos.closedCaptions.getManifest(videoId);
+      return trackManifest.tracks.map((t) => '${t.language.code} - ${t.language.name}').toList();
+    } catch (_) { return []; }
+  }
 
   Future<VideoInfo> getVideoInfo(String url) async {
     final videoId = extractVideoId(url);
