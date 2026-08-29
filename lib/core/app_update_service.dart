@@ -89,7 +89,7 @@ class AppUpdateService {
   Future<String?> _downloadApk(String url, String tag, {void Function(int, int)? onProgress}) async {
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/indir-gitsin-$tag.apk';
-    await _dio.download(url, path, onProgress: onProgress, options: Options(headers: {'User-Agent': 'IndirGitsin-Updater'}));
+    await _dio.download(url, path, onReceiveProgress: onProgress, options: Options(headers: {'User-Agent': 'IndirGitsin-Updater'}));
     final f = File(path);
     if (await f.exists() && await f.length() > 1000000) return path;
     return null;
