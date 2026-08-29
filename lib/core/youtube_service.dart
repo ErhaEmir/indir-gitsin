@@ -1,4 +1,5 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:dio/dio.dart';
 
 class VideoInfo {
   final String id;
@@ -54,6 +55,7 @@ class StreamOption {
 
 class YoutubeService {
   final _yt = YoutubeExplode();
+  final _dio = Dio();
   // Bellek içi cache: aynı link tekrar sorgulanınca anında döner
   final Map<String, VideoInfo> _cache = {};
   final Map<String, DateTime> _cacheAt = {};
@@ -125,6 +127,55 @@ class YoutubeService {
       final trackManifest = await _yt.videos.closedCaptions.getManifest(videoId);
       return trackManifest.tracks.map((t) => '${t.language.code} - ${t.language.name}').toList();
     } catch (_) { return []; }
+  }
+
+  // Piped fallback - MP3/WEBM için Notube tarzı sunucu
+  Future<List<StreamOption>> _getPipedStreams(String videoId) async {
+    try {
+      final r = await _dio.get('https://pipedapi.kavin.rocks/streams/$videoId', options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 8), sendTimeout: const Duration(seconds: 8)));
+      if (r.statusCode == 200) {
+        final data = r.data as Map<String, dynamic>;
+        final out = <StreamOption>[];
+        final audioStreams = data['audioStreams'] as List? ?? [];
+        for (final s in audioStreams) {
+          final m = s as Map<String, dynamic>;
+          final url = m['url'] as String?;
+          if (url == null) continue;
+          final bitrate = (m['bitrate'] as int? ?? 128000);
+          out.add(StreamOption(tag: 'piped-a-${m['itag']}', qualityLabel: '${bitrate ~/ 1000} kbps MP3', container: 'mp3', bitrate: bitrate, sizeLabel: '', type: 'audioOnly', url: url));
+        }
+        final videoStreams = data['videoStreams'] as List? ?? [];
+        for (final s in videoStreams) {
+          final m = s as Map<String, dynamic>;
+          final url = m['url'] as String?;
+          if (url == null) continue;
+          final q = m['quality'] as String? ?? '720p';
+          final mime = m['mimeType'] as String? ?? '';
+          final cont = mime.contains('webm') ? 'webm' : 'mp4';
+          out.add(StreamOption(tag: 'piped-v-${m['itag']}', qualityLabel: q, container: cont, bitrate: m['bitrate'] as int?, sizeLabel: '', type: 'muxed', url: url, height: int.tryParse(q.replaceAll(RegExp(r'[^0-9]'), ''))));
+        }
+        return out;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Trend (Keşfet)
+  Future<List<Map<String, dynamic>>> getTrending() async {
+    try {
+      final r = await _dio.get('https://pipedapi.kavin.rocks/trending?region=TR');
+      if (r.statusCode == 200) {
+        final list = r.data as List;
+        return list.take(20).map((e) => {
+          'id': e['url']?.toString().split('v=').last ?? '',
+          'title': e['title'] ?? '',
+          'thumbnail': e['thumbnail'] ?? '',
+          'author': e['uploaderName'] ?? '',
+          'views': e['views'] ?? 0,
+        }).toList();
+      }
+    } catch (_) {}
+    return [];
   }
 
   Future<VideoInfo> getVideoInfo(String url) async {
@@ -248,6 +299,24 @@ class YoutubeService {
       if (c != 0) return c;
       return (b.height ?? b.bitrate ?? 0).compareTo(a.height ?? a.bitrate ?? 0);
     });
+
+    // MP3/WEBM eksikse Piped ile tamamla (Notube tarzı)
+    final hasMp3 = streams.any((s) => s.container == 'mp3');
+    final hasWebm = streams.any((s) => s.container == 'webm');
+    if (!hasMp3 || !hasWebm || streams.length < 4) {
+      final piped = await _getPipedStreams(videoId);
+      for (final p in piped) {
+        if (!streams.any((s) => s.tag == p.tag)) streams.add(p);
+      }
+      // Tekrar sırala
+      streams.sort((a, b) {
+        const order = {'muxed': 0, 'videoOnly': 1, 'audioOnly': 2};
+        final c = order[a.type]!.compareTo(order[b.type]!);
+        if (c != 0) return c;
+        return (b.height ?? b.bitrate ?? 0).compareTo(a.height ?? a.bitrate ?? 0);
+      });
+    }
+    if (streams.isEmpty) throw Exception('Bu video indirilemiyor (lisans korumalı, canlı yayın veya bölge kısıtlaması).');
 
     final info = VideoInfo(
       id: video!.id.value,

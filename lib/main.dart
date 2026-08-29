@@ -23,6 +23,7 @@ import 'core/storage_service.dart';
 import 'core/notification_service.dart';
 import 'features/player/player_page.dart';
 import 'features/player/network_player_page.dart';
+import 'features/explore/explore_page.dart';
 
 final youtubeServiceProvider = Provider((ref) => YoutubeService());
 final downloadServiceProvider = Provider((ref) => DownloadService());
@@ -115,6 +116,7 @@ class MainScaffold extends ConsumerStatefulWidget {
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _idx = 0;
   final _filesKey = GlobalKey<FilesTabState>();
+  final _homeKey = GlobalKey<HomeTabState>();
   @override
   void initState() {
     super.initState();
@@ -194,7 +196,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      const HomeTab(),
+      HomeTab(key: _homeKey),
+      ExplorePage(onSelect: (url){ _homeKey.currentState?.setLinkAndFetch(url); setState(()=> _idx=0); }),
       FilesTab(key: _filesKey),
       const FavoritesTab(),
       const SettingsTab(),
@@ -205,10 +208,11 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         selectedIndex: _idx,
         onDestinationSelected: (i) {
           setState(() => _idx = i);
-          if (i==1) _filesKey.currentState?.refresh();
+          if (i==2) _filesKey.currentState?.refresh();
         },
         destinations: [
           NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
+          NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'Keşfet'),
           NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
           NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
           NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
@@ -222,10 +226,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
 class HomeTab extends ConsumerStatefulWidget {
   const HomeTab({super.key});
   @override
-  ConsumerState<HomeTab> createState() => _HomeTabState();
+  ConsumerState<HomeTab> createState() => HomeTabState();
 }
 
-class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin {
+class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin {
   final _linkCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -451,6 +455,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   }
 
   void _clear() => setState(() { _linkCtrl.clear(); _video = null; _error = null; _savedPath = null; });
+  void setLinkAndFetch(String url) { _linkCtrl.text = url; _fetch(); }
 
   @override
   Widget build(BuildContext context) {

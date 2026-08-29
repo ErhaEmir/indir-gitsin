@@ -45,15 +45,19 @@ class DownloadService {
     return true;
   }
 
-  Future<String> getDownloadPath() async {
+  Future<String> getDownloadPath({String? ext}) async {
+    String subFolder = '';
+    if (ext == 'mp3' || ext == 'm4a') subFolder = 'Muzikler';
+    else if (ext == 'mp4' || ext == 'webm' || ext == 'mkv') subFolder = 'Videolar';
     if (Platform.isAndroid) {
-      // /storage/emulated/0/Download/IndirGitsin
-      final dir = Directory('/storage/emulated/0/Download/IndirGitsin');
+      final base = '/storage/emulated/0/Download/IndirGitsin';
+      final path = subFolder.isEmpty ? base : '$base/$subFolder';
+      final dir = Directory(path);
       if (!await dir.exists()) await dir.create(recursive: true);
       return dir.path;
     } else {
       final dir = await getApplicationDocumentsDirectory();
-      final sub = Directory(p.join(dir.path, 'IndirGitsin'));
+      final sub = Directory(p.join(dir.path, 'IndirGitsin', subFolder));
       if (!await sub.exists()) await sub.create(recursive: true);
       return sub.path;
     }
@@ -74,7 +78,7 @@ class DownloadService {
     final ok = await requestPermission();
     if (!ok) throw Exception('Depolama izni verilmedi');
 
-    final dir = await getDownloadPath();
+    final dir = await getDownloadPath(ext: ext);
     final safe = sanitize(fileName);
     final path = p.join(dir, '$safe.$ext');
     _cancelToken = CancelToken();
@@ -189,7 +193,7 @@ class DownloadService {
       target ??= manifest.videoOnly.cast<dynamic>().firstWhere((s) => s.tag.toString() == streamTag, orElse: () => null);
       target ??= manifest.muxed.isNotEmpty ? manifest.muxed.first : manifest.audioOnly.first;
       final stream = yt.videos.streamsClient.get(target);
-      final dir = await getDownloadPath();
+      final dir = await getDownloadPath(ext: ext);
       final path = p.join(dir, '${sanitize(fileName)}.$ext');
       final file = File(path);
       final sink = file.openWrite();
