@@ -160,12 +160,14 @@ class YoutubeService {
     return [];
   }
 
-  // Trend (Keşfet) - 2 Piped instance dene, yoksa boş dön
-  Future<List<Map<String, dynamic>>> getTrending() async {
+  // Trend (Keşfet) - YouTube Music Top 100 için Piped + youtube_explode fallback
+  Future<List<Map<String, dynamic>>> getTrending() async => getTrendingMusic();
+
+  Future<List<Map<String, dynamic>>> getTrendingMusic() async {
+    // Önce Piped Music trending dene
     const endpoints = [
       'https://pipedapi.kavin.rocks/trending?region=TR',
       'https://pipedapi.adminforge.de/trending?region=TR',
-      'https://piped-api.lunar.icu/trending?region=TR',
     ];
     for (final ep in endpoints) {
       try {
@@ -173,9 +175,12 @@ class YoutubeService {
         if (r.statusCode == 200) {
           final data = r.data;
           final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
-          if (list.isNotEmpty) {
-            return list.take(20).map((e) => {
-              'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? ''),
+          // Music kategorisini filtrele (category == Music) veya hepsinden 100 al
+          var filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains('music') ?? false)).toList();
+          if (filtered.isEmpty) filtered = list;
+          if (filtered.isNotEmpty) {
+            return filtered.take(100).map((e) => {
+              'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first,
               'title': e['title'] ?? '',
               'thumbnail': e['thumbnail'] ?? e['thumbnailUrl'] ?? '',
               'author': e['uploaderName'] ?? e['uploader'] ?? '',
@@ -185,6 +190,17 @@ class YoutubeService {
         }
       } catch (_) { continue; }
     }
+    // Fallback: youtube_explode search ile Top 100 Music
+    try {
+      final res = await _yt.search.search('Top 100 Turkey Music 2024');
+      final out = <Map<String,dynamic>>[];
+      for (final e in res.take(100)) {
+        if (e is Video) {
+          out.add({'id': e.id.value, 'title': e.title, 'thumbnail': e.thumbnails.highResUrl, 'author': e.author, 'views': e.engagement.viewCount ?? 0});
+        }
+      }
+      if (out.isNotEmpty) return out;
+    } catch (_){}
     return [];
   }
 

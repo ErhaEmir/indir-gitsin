@@ -17,18 +17,18 @@ class _ExplorePageState extends State<ExplorePage> {
   Future<void> _load() async {
     setState(()=> _loading=true);
     try {
-      final list = await YoutubeService().getTrending();
+      final list = await YoutubeService().getTrendingMusic();
       setState(()=> _trending=list);
     } catch(e){
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Trend yüklenemedi: $e')));
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'trending_load_failed'.tr()}: $e')));
     }
     setState(()=> _loading=false);
   }
   @override
   Widget build(BuildContext context){
     return Scaffold(
-      appBar: AppBar(title: Text('Keşfet'.tr()), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
-      body: _loading ? const Center(child: CircularProgressIndicator()) : _trending.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.explore_rounded, size:48, color: Colors.grey), const SizedBox(height:8), Text('Trend yüklenemedi', style: TextStyle(color: Colors.grey[600])), TextButton(onPressed: _load, child: const Text('Tekrar dene'))])) : RefreshIndicator(
+      appBar: AppBar(title: Text('explore'.tr()), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
+      body: _loading ? const Center(child: CircularProgressIndicator()) : _trending.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.explore_rounded, size:48, color: Colors.grey), const SizedBox(height:8), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600])), TextButton(onPressed: _load, child: Text('retry'.tr()))])) : RefreshIndicator(
         onRefresh: _load,
         child: GridView.builder(
           padding: const EdgeInsets.all(12),
@@ -48,7 +48,7 @@ class _ExplorePageState extends State<ExplorePage> {
                     const SizedBox(height:4),
                     Text(v['author']??'', maxLines:1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey[600], fontSize:11)),
                     const SizedBox(height:4),
-                    Row(children: [Icon(Icons.visibility_rounded, size:12, color: Colors.grey[500]), const SizedBox(width:4), Text('${v['views']??0}', style: TextStyle(color: Colors.grey[500], fontSize:11)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal:6, vertical:2), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(99)), child: const Text('İNDİR', style: TextStyle(color: Colors.white, fontSize:10, fontWeight: FontWeight.w800)))]),
+                    Row(children: [Icon(Icons.visibility_rounded, size:12, color: Colors.grey[500]), const SizedBox(width:4), Text('${v['views']??0}', style: TextStyle(color: Colors.grey[500], fontSize:11)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal:6, vertical:2), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(99)), child: Text('download'.tr(), style: const TextStyle(color: Colors.white, fontSize:10, fontWeight: FontWeight.w800)))]),
                   ])),
                 ]),
               ),

@@ -68,5 +68,7 @@
   "close": "Kapat",
   "open_youtube": "YouTube'da aç",
   "Kapat": "Kapat",
-  "Önizlemek için dokun": "Önizlemek için dokun"
+  "Önizlemek için dokun": "Önizlemek için dokun",
+  "explore": "Keşfet",
+  "trending_load_failed": "Trend yüklenemedi"
 }

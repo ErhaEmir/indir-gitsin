@@ -68,5 +68,7 @@
   "close": "Close",
   "open_youtube": "Open in YouTube",
   "Kapat": "Close",
-  "Önizlemek için dokun": "Tap to preview"
+  "Önizlemek için dokun": "Tap to preview",
+  "explore": "Explore",
+  "trending_load_failed": "Failed to load trending"
 }
