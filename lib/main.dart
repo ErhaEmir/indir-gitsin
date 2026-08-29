@@ -109,6 +109,7 @@ class MainScaffold extends ConsumerStatefulWidget {
 
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _idx = 0;
+  final _filesKey = GlobalKey<FilesTabState>();
   @override
   void initState() {
     super.initState();
@@ -122,7 +123,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   Widget build(BuildContext context) {
     final pages = [
       const HomeTab(),
-      const FilesTab(),
+      FilesTab(key: _filesKey),
       const FavoritesTab(),
       const SettingsTab(),
     ];
@@ -130,7 +131,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       body: IndexedStack(index: _idx, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _idx,
-        onDestinationSelected: (i) => setState(() => _idx = i),
+        onDestinationSelected: (i) {
+          setState(() => _idx = i);
+          if (i==1) _filesKey.currentState?.refresh();
+        },
         destinations: [
           NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
           NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
@@ -200,28 +204,34 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   }
 
   void _listenShareIntent() {
-    // Direkt hazırlanma: paylaşınca otomatik çözümlenir
-    ReceiveSharingIntent.instance.getInitialMedia().then((List<SharedMediaFile> media) {
-      if (media.isNotEmpty) {
-        final text = media.first.path;
-        if (YoutubeService.isValidYoutubeUrl(text)) {
-          _linkCtrl.text = text;
-          // Direkt hazırla
+    // Direkt hazırlanma: paylaşınca otomatik çözümlenir - tüm media'ları tara (YouTube Music dahil)
+    void handleMedia(List<SharedMediaFile> media) {
+      for (final m in media) {
+        final text = m.path.trim();
+        // Bazen paylaşılan metin m.path içinde, bazen type text ise yine path'te
+        final candidate = YoutubeService.extractVideoId(text) != null ? text : (m.type == SharedMediaType.text ? text : '');
+        // Ek olarak: eğer path YouTube URL içeriyorsa direkt al
+        String? url;
+        if (YoutubeService.isValidYoutubeUrl(text)) url = text;
+        else if (YoutubeService.isValidYoutubeUrl(candidate)) url = candidate;
+        else {
+          // Metin içinde URL ara (örn: "Check https://youtu.be/xxx")
+          final match = RegExp(r'https?://[^\s]+').firstMatch(text);
+          if (match != null && YoutubeService.isValidYoutubeUrl(match.group(0)!)) url = match.group(0)!;
+        }
+        if (url != null) {
+          _linkCtrl.text = url;
           Future.delayed(const Duration(milliseconds: 300), _fetch);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('share_preparing'.tr()), behavior: SnackBarBehavior.floating));
+          break;
         }
       }
+    }
+    ReceiveSharingIntent.instance.getInitialMedia().then((List<SharedMediaFile> media) {
+      if (media.isNotEmpty) handleMedia(media);
     });
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((List<SharedMediaFile> media) {
-      if (media.isNotEmpty) {
-        final text = media.first.path;
-        if (YoutubeService.isValidYoutubeUrl(text)) {
-          _linkCtrl.text = text;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('share_preparing'.tr()), behavior: SnackBarBehavior.floating));
-          }
-          _fetch();
-        }
-      }
+      if (media.isNotEmpty) handleMedia(media);
     }, onError: (e) => debugPrint('intent error $e'));
   }
 
@@ -533,12 +543,13 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   Widget _empty(BuildContext c) => Column(children: [Icon(Icons.download_for_offline_rounded, size: 64, color: Theme.of(c).colorScheme.primary.withOpacity(0.3)), const SizedBox(height: 10), Text('ready'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)), Text('empty_hint'.tr(), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600])), const SizedBox(height: 12), Wrap(spacing: 8, children: [ActionChip(label: Text('Demo'), onPressed: (){ _linkCtrl.text='https://www.youtube.com/watch?v=jNQXAC9IVRw'; _fetch();}), ActionChip(label: Text('Music'), onPressed: (){ _linkCtrl.text='https://music.youtube.com/watch?v=jNQXAC9IVRw'; _fetch();})])]);
 }
 
-// FILES TAB - dosya yönetimi + depolama seçici
-class FilesTab extends StatefulWidget { const FilesTab({super.key}); @override State<FilesTab> createState()=> _FilesTabState();}
-class _FilesTabState extends State<FilesTab> {
+// FILES TAB - dosya yönetimi + depolama seçici + her girişte yenile
+class FilesTab extends StatefulWidget { const FilesTab({super.key}); @override State<FilesTab> createState()=> FilesTabState();}
+class FilesTabState extends State<FilesTab> {
   List<FileSystemEntity> _files = [];
-  String _sort = 'date'; // date / size / name
+  String _sort = 'date';
   @override void initState(){ super.initState(); _load(); }
+  Future<void> refresh() async => _load();
   Future<Directory> _getDir() async {
     final prefs = await SharedPreferences.getInstance();
     final custom = prefs.getString('custom_download_path');

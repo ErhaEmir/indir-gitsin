@@ -129,23 +129,45 @@ class YoutubeService {
 
   Future<VideoInfo> getVideoInfo(String url) async {
     final videoId = extractVideoId(url);
-    if (videoId == null) throw Exception('Geçersiz YouTube linki');
+    if (videoId == null) throw Exception('Geçersiz YouTube linki. Linki kontrol edin (youtu.be, youtube.com, music.youtube.com, shorts desteklenir)');
     // Cache hit?
     final cached = _cache[videoId];
     if (cached != null && DateTime.now().difference(_cacheAt[videoId]!) < _cacheTtl) {
       return cached;
     }
-    // Paralel fetch: video bilgisi + manifest aynı anda (hız +%40)
-    final results = await Future.wait([
-      _yt.videos.get(videoId).timeout(const Duration(seconds: 8)),
-      _yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 8)),
-    ]);
-    final video = results[0] as Video;
-    final manifest = results[1] as StreamManifest;
+    // Kendi videoların ve Music için retry + detaylı hata
+    Video? video;
+    StreamManifest? manifest;
+    String? lastErr;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final results = await Future.wait([
+          _yt.videos.get(videoId).timeout(const Duration(seconds: 10)),
+          _yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 10)),
+        ]);
+        video = results[0] as Video;
+        manifest = results[1] as StreamManifest;
+        break;
+      } catch (e) {
+        lastErr = e.toString();
+        // Music linki için youtube.com'a çevirerek tekrar dene
+        if (url.contains('music.youtube.com') && attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 400));
+          continue;
+        }
+        if (attempt == 0) await Future.delayed(const Duration(milliseconds: 600));
+      }
+    }
+    if (video == null || manifest == null) {
+      // Kullanıcı dostu hata
+      if (lastErr != null && lastErr.contains('VideoUnavailable')) throw Exception('Video bulunamadı veya gizli. Kendi videon ise gizlilik ayarını Herkese Açık yapıp tekrar dene.');
+      if (lastErr != null && lastErr.contains('Requires login')) throw Exception('Bu video giriş gerektiriyor. YouTube Music/özel videolarda bazen olur, herkese açık bir link dene.');
+      throw Exception(lastErr ?? 'Video bilgisi alınamadı');
+    }
 
     final streams = <StreamOption>[];
 
-    for (final s in manifest.muxed) {
+    for (final s in manifest!.muxed) {
       streams.add(StreamOption(
         tag: s.tag.toString(),
         qualityLabel: s.videoQualityLabel,
@@ -159,7 +181,7 @@ class YoutubeService {
         videoCodec: s.videoCodec,
       ));
     }
-    for (final s in manifest.videoOnly) {
+    for (final s in manifest!.videoOnly) {
       streams.add(StreamOption(
         tag: s.tag.toString(),
         qualityLabel: '${s.videoQualityLabel} (sadece video)',
@@ -172,7 +194,7 @@ class YoutubeService {
         videoCodec: s.videoCodec,
       ));
     }
-    for (final s in manifest.audioOnly) {
+    for (final s in manifest!.audioOnly) {
       final kbps = (s.bitrate.kiloBitsPerSecond).round();
       streams.add(StreamOption(
         tag: s.tag.toString(),
@@ -195,7 +217,7 @@ class YoutubeService {
     });
 
     final info = VideoInfo(
-      id: video.id.value,
+      id: video!.id.value,
       title: video.title,
       author: video.author,
       channelId: video.channelId.value,
