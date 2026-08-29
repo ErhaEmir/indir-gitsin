@@ -13,11 +13,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
 import 'core/app_update_service.dart';
 import 'core/storage_service.dart';
+import 'core/notification_service.dart';
 import 'features/player/player_page.dart';
 
 final youtubeServiceProvider = Provider((ref) => YoutubeService());
@@ -28,6 +30,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
   await StorageService.init();
+  await NotificationService.init();
   final prefs = await SharedPreferences.getInstance();
   final savedTheme = prefs.getString('theme_mode') ?? 'system';
   final savedLang = prefs.getString('lang');
@@ -113,10 +116,46 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   void initState() {
     super.initState();
-    // Her açılışta otomatik kontrol (açık ise)
-    AppUpdateService().checkAndUpdateSilently();
-    // 6 saatte bir kontrol
+    _firstLaunchCheck();
+    // Her açılışta otomatik kontrol (açık ise) - varsa ayarlarda yükle kısmına yönlendir
+    AppUpdateService().checkAndUpdateSilently().then((_) async {
+      final res = await AppUpdateService().checkForUpdateManual();
+      if (res!=null && res['hasUpdate']==true && mounted) {
+        // Kullanıcıyı ayarlardaki yükle kısmına götür (3. sekme index 3)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Yeni güncelleme var! Ayarlar > Güncellemeleri denetle'.tr()), action: SnackBarAction(label: 'Git'.tr(), onPressed: ()=> setState(()=> _idx=3)), behavior: SnackBarBehavior.floating));
+      }
+    });
     Timer.periodic(const Duration(hours: 6), (_) => AppUpdateService().checkAndUpdateSilently());
+  }
+
+  Future<void> _firstLaunchCheck() async {
+    final prefs = await SharedPreferences.getInstance();
+    final done = prefs.getBool('first_launch_done') ?? false;
+    if (done) return;
+    if (!mounted) return;
+    await showDialog(context: context, barrierDismissible: false, builder: (c)=> AlertDialog(
+      title: Row(children: [Icon(Icons.verified_user_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('Hoş geldin!'.tr())]),
+      content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('İndir Gitsin güvenle çalışmak için izinlere ihtiyaç duyar.'.tr(), style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
+        Row(children: [const Icon(Icons.folder_rounded, size:18), const SizedBox(width:6), Expanded(child: Text('Depolama: videoları /Download/IndirGitsin klasörüne kaydeder'))]),
+        const SizedBox(height:6),
+        Row(children: [const Icon(Icons.notifications_rounded, size:18), const SizedBox(width:6), Expanded(child: Text('Bildirim: indirme bitince haber verir'))]),
+        const SizedBox(height:10),
+        Text('İzinler ayarlardan her zaman değiştirilebilir.', style: TextStyle(color: Colors.grey[600], fontSize:12)),
+      ])),
+      actions: [
+        TextButton(onPressed: () async { await prefs.setBool('first_launch_done', true); if(mounted) Navigator.pop(c); }, child: Text('Daha sonra'.tr())),
+        FilledButton(onPressed: () async {
+          await prefs.setBool('first_launch_done', true);
+          // İzin iste
+          try { await Permission.storage.request(); await Permission.notification.request(); } catch(_){}
+          await NotificationService.init();
+          if(mounted) Navigator.pop(c);
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('İzinler kaydedildi'.tr())));
+        }, child: Text('İzin ver'.tr())),
+      ],
+    ));
   }
 
   @override
@@ -256,7 +295,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
     HapticFeedback.lightImpact();
     setState(() { _loading = true; _error = null; _video = null; _selected = null; _savedPath = null; });
     try {
-      final info = await ref.read(youtubeServiceProvider).getVideoInfo(url).timeout(const Duration(seconds: 10));
+      final info = await ref.read(youtubeServiceProvider).getVideoInfo(url).timeout(const Duration(seconds: 15));
       if (!mounted) return;
       setState(() { _video = info; _selected = info.streams.isNotEmpty ? info.streams.first : null; });
       HapticFeedback.selectionClick();
@@ -354,6 +393,11 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
       StorageService.addHistory({'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${_video!.id}', 'path': path, 'date': DateTime.now().toIso8601String()});
       setState(() { _savedPath = path; _downloading = false; _progress = 1; });
       HapticFeedback.heavyImpact();
+      // Bildirim (ayardan kapatılabilir)
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('notify_enabled') ?? true) {
+        try { await NotificationService.showDownloadDone(_video!.title, path); } catch(_){}
+      }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'downloaded'.tr()}: ${path.split('/').last}'), action: SnackBarAction(label: 'open'.tr(), onPressed: () => OpenFilex.open(path)), behavior: SnackBarBehavior.floating));
     } catch (e) {
       setState(() { _downloading = false; _error = '${'error'.tr()}: $e'; });
@@ -716,11 +760,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
             final p=s.data; final autoClip = p?.getBool('auto_clipboard') ?? true;
             final vib = p?.getBool('haptic') ?? true;
-            final notif = p?.getBool('notify_done') ?? true;
+            final notif = p?.getBool('notify_enabled') ?? true;
             return Column(children: [
               SwitchListTile(value: autoClip, title: const Text('Panoya otomatik bak'), subtitle: const Text('Link kopyalayınca direkt hazırla', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_clipboard', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
               SwitchListTile(value: vib, title: const Text('Titreşim geri bildirimi'), subtitle: const Text('Dokunmalarda haptic', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('haptic', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: notif, title: const Text('İndirme bitince SnackBar'), subtitle: const Text('Bitince aç butonu göster', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('notify_done', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: notif, title: const Text('İndirme bitince bildirim'), subtitle: const Text('Video indirildi diye bildirim at', style: TextStyle(fontSize:12)), onChanged: (v) async { 
+                final pr=await SharedPreferences.getInstance(); 
+                await pr.setBool('notify_enabled', v); 
+                if(v) { await Permission.notification.request(); }
+                (c as Element).markNeedsBuild(); 
+              }, contentPadding: EdgeInsets.zero),
               const SizedBox(height: 4),
               SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async { await StorageService.search.delete('list'); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arama geçmişi temizlendi')));}, icon: const Icon(Icons.history_rounded), label: const Text('Arama geçmişini temizle'))),
             ]);

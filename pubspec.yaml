@@ -1,7 +1,7 @@
 name: indir_gitsin
 description: YouTube ve YouTube Music indirme uygulaması - modern ve kullanıcı dostu
 publish_to: 'none'
-version: 1.2.3+10
+version: 1.2.4+11
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -43,6 +43,7 @@ dependencies:
   video_player: ^2.8.6
   chewie: ^1.8.1
   easy_localization: ^3.0.7
+  flutter_local_notifications: ^17.1.2
 
 dev_dependencies:
   flutter_test:

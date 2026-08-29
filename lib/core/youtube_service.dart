@@ -135,34 +135,38 @@ class YoutubeService {
     if (cached != null && DateTime.now().difference(_cacheAt[videoId]!) < _cacheTtl) {
       return cached;
     }
-    // Kendi videoların ve Music için retry + detaylı hata
+    // Kendi videoların ve Music için retry + daha uzun timeout + detaylı hata
     Video? video;
     StreamManifest? manifest;
     String? lastErr;
-    for (int attempt = 0; attempt < 2; attempt++) {
+    for (int attempt = 0; attempt < 3; attempt++) {
       try {
         final results = await Future.wait([
-          _yt.videos.get(videoId).timeout(const Duration(seconds: 10)),
-          _yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 10)),
+          _yt.videos.get(videoId).timeout(const Duration(seconds: 15)),
+          _yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 15)),
         ]);
         video = results[0] as Video;
         manifest = results[1] as StreamManifest;
         break;
       } catch (e) {
         lastErr = e.toString();
-        // Music linki için youtube.com'a çevirerek tekrar dene
-        if (url.contains('music.youtube.com') && attempt == 0) {
-          await Future.delayed(const Duration(milliseconds: 400));
+        if (e.toString().contains('TimeoutException') || e.toString().contains('SocketException') || e.toString().contains('ClientException')) {
+          // ağ hatası, tekrar dene
+          await Future.delayed(Duration(milliseconds: 700 * (attempt+1)));
           continue;
         }
-        if (attempt == 0) await Future.delayed(const Duration(milliseconds: 600));
+        if (url.contains('music.youtube.com') && attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        if (attempt < 2) await Future.delayed(Duration(milliseconds: 600 * (attempt+1)));
       }
     }
     if (video == null || manifest == null) {
-      // Kullanıcı dostu hata
       if (lastErr != null && lastErr.contains('VideoUnavailable')) throw Exception('Video bulunamadı veya gizli. Kendi videon ise gizlilik ayarını Herkese Açık yapıp tekrar dene.');
       if (lastErr != null && lastErr.contains('Requires login')) throw Exception('Bu video giriş gerektiriyor. YouTube Music/özel videolarda bazen olur, herkese açık bir link dene.');
-      throw Exception(lastErr ?? 'Video bilgisi alınamadı');
+      if (lastErr != null && (lastErr.contains('Timeout') || lastErr.contains('Socket'))) throw Exception('Bağlantı yavaş, tekrar dene (sunucu yoğun olabilir). Farklı kalite seçmeyi dene.');
+      throw Exception(lastErr ?? 'Video bilgisi alınamadı - interneti kontrol et ve tekrar dene');
     }
 
     final streams = <StreamOption>[];
