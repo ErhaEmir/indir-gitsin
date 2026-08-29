@@ -79,6 +79,15 @@ class DownloadService {
     final path = p.join(dir, '$safe.$ext');
     _cancelToken = CancelToken();
 
+    // MP3/WEBM için direkt explode fallback daha güvenilir (YouTube audio throttling)
+    if ((ext == 'mp3' || ext == 'webm') && videoId != null && streamTag != null) {
+      try {
+        return await _downloadViaExplode(videoId: videoId, streamTag: streamTag, fileName: fileName, ext: ext, onProgress: onProgress);
+      } catch (e) {
+        debugPrint('MP3/WEBM explode ilk deneme hata, dio fallback: $e');
+      }
+    }
+
     // DioException 403/429 için yeniden deneme + taze URL alma
     String currentUrl = url;
     DioException? lastError;
@@ -134,15 +143,19 @@ class DownloadService {
       }
     }
 
-    // Hata mesajını kullanıcı dostu yap
+    // Hata mesajını kullanıcı dostu yap - nedenini açıkla
     if (lastError != null) {
       final code = lastError.response?.statusCode;
-      if (code == 403) throw Exception('YouTube erişimi reddedildi (403). Linki yeniden çözümleyip tekrar deneyin. Farklı kalite seçmeyi deneyin.');
-      if (code == 404) throw Exception('Stream bulunamadı (404). Video silinmiş olabilir.');
+      if (code == 403) {
+        if (ext == 'mp3') throw Exception('MP3 indirilemedi (403): YouTube bu videoda MP3 koruması uyguluyor olabilir. MP4 deneyin veya farklı bir video deneyin.');
+        if (ext == 'webm') throw Exception('WEBM indirilemedi (403): Bu formatta lisans/bölge kısıtlaması var. MP4 deneyin.');
+        throw Exception('YouTube erişimi reddedildi (403). Lisans korumalı veya bölge kısıtlı olabilir. MP4 ile tekrar deneyin.');
+      }
+      if (code == 404) throw Exception('Stream bulunamadı (404). Video silinmiş veya format desteklenmiyor.');
       if (lastError.type == DioExceptionType.connectionTimeout) throw Exception('Bağlantı zaman aşımı. İnternetini kontrol et.');
       throw Exception('İndirme hatası (${code ?? lastError.type}): ${lastError.message}');
     }
-    throw Exception('İndirme başarısız');
+    throw Exception('İndirme başarısız - lisans korumalı olabilir, MP4 ile deneyin');
   }
 
   Future<String?> _resolveFreshUrl(String videoId, String tag) async {

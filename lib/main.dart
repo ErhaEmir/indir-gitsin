@@ -400,7 +400,15 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'downloaded'.tr()}: ${path.split('/').last}'), action: SnackBarAction(label: 'open'.tr(), onPressed: () => OpenFilex.open(path)), behavior: SnackBarBehavior.floating));
     } catch (e) {
-      setState(() { _downloading = false; _error = '${'error'.tr()}: $e'; });
+      final raw = e.toString();
+      String friendly = raw;
+      if (raw.contains('lisans') || raw.contains('Lisans')) friendly = raw;
+      else if (raw.contains('403')) friendly = 'Erişim reddedildi (403): Bu video MP3/WEBM formatında lisans korumalı veya bölge kısıtlı olabilir. MP4 deneyin veya farklı kalite seçin.';
+      else if (raw.contains('404')) friendly = 'Stream bulunamadı (404): Video silinmiş veya format desteklenmiyor.';
+      else if (raw.contains('Timeout') || raw.contains('Socket')) friendly = 'Bağlantı zaman aşımı: İnternet yavaş, tekrar dene.';
+      else friendly = '${'error'.tr()}: $raw';
+      setState(() { _downloading = false; _error = friendly; });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendly), backgroundColor: Theme.of(context).colorScheme.error, behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 5), action: SnackBarAction(label: 'Anladım', textColor: Colors.white, onPressed: (){})));
     }
   }
 
