@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
@@ -680,13 +681,19 @@ class FilesTabState extends State<FilesTab> {
   }
 }
 
-// FAVORITES + HISTORY
+// FAVORITES + HISTORY - ValueListenable ile otomatik yenilenir
 class FavoritesTab extends StatelessWidget { const FavoritesTab({super.key}); @override Widget build(BuildContext c){
-  final fav = StorageService.fav.values.toList().cast<Map>();
-  final hist = StorageService.history.values.toList().cast<Map>().reversed.toList();
   return DefaultTabController(length: 2, child: Scaffold(appBar: AppBar(title: Text('favorites'.tr()), bottom: TabBar(tabs: [Tab(text: 'favorites'.tr()), Tab(text: 'history'.tr())])), body: TabBarView(children: [
-    fav.isEmpty? Center(child: Text('no_downloads'.tr())): ListView.builder(itemCount: fav.length, itemBuilder: (_,i){ final m=fav[i]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: m['thumbnail']??'', width:56, height:56, fit: BoxFit.cover)), title: Text(m['title']??'', maxLines:1), subtitle: Text(m['id']??''), trailing: IconButton(icon: const Icon(Icons.delete_rounded), onPressed: ()=> StorageService.fav.delete(m['id'])));}),
-    hist.isEmpty? Center(child: Text('no_downloads'.tr())): ListView.builder(itemCount: hist.length, itemBuilder: (_,i){ final m=hist[i]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: m['thumbnail']??'', width:56, height:56, fit: BoxFit.cover)), title: Text(m['title']??'', maxLines:1), subtitle: Text(m['path']?.toString().split('/').last ?? ''), trailing: IconButton(icon: const Icon(Icons.open_in_new_rounded), onPressed: ()=> OpenFilex.open(m['path'])));}),
+    ValueListenableBuilder<Box>(valueListenable: StorageService.fav.listenable(), builder: (_, box, __){
+      final fav = box.values.toList().cast<Map>();
+      if(fav.isEmpty) return Center(child: Text('no_downloads'.tr()));
+      return ListView.builder(itemCount: fav.length, itemBuilder: (_,i){ final m=fav[i]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: m['thumbnail']??'', width:56, height:56, fit: BoxFit.cover)), title: Text(m['title']??'', maxLines:1), subtitle: Text(m['id']??''), trailing: IconButton(icon: const Icon(Icons.delete_rounded), onPressed: ()=> StorageService.fav.delete(m['id'])));});
+    }),
+    ValueListenableBuilder<Box>(valueListenable: StorageService.history.listenable(), builder: (_, box, __){
+      final hist = box.values.toList().cast<Map>().reversed.toList();
+      if(hist.isEmpty) return Center(child: Text('no_downloads'.tr()));
+      return ListView.builder(itemCount: hist.length, itemBuilder: (_,i){ final m=hist[i]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: m['thumbnail']??'', width:56, height:56, fit: BoxFit.cover)), title: Text(m['title']??'', maxLines:1), subtitle: Text(m['path']?.toString().split('/').last ?? ''), trailing: Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.open_in_new_rounded), onPressed: ()=> OpenFilex.open(m['path'])), IconButton(icon: const Icon(Icons.delete_rounded, color: Colors.red), onPressed: ()=> StorageService.history.delete(m['id']))]));});
+    }),
   ])));
 }}
 
@@ -792,7 +799,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 (c as Element).markNeedsBuild(); 
               }, contentPadding: EdgeInsets.zero),
               const SizedBox(height: 4),
-              SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async { await StorageService.search.delete('list'); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arama geçmişi temizlendi')));}, icon: const Icon(Icons.history_rounded), label: const Text('Arama geçmişini temizle'))),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
+                final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi ve izleme geçmişi silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
+                if(ok!=true) return;
+                await StorageService.search.delete('list');
+                await StorageService.history.clear();
+                await StorageService.fav.clear();
+                if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geçmiş ve arama geçmişi temizlendi'), behavior: SnackBarBehavior.floating));
+                // Favoriler/Geçmiş sayfaları otomatik yenilensin diye setState tetikle
+                if(context.mounted) (context as Element).markNeedsBuild();
+              }, icon: const Icon(Icons.delete_sweep_rounded), label: const Text('Arama geçmişini ve geçmişi temizle'))),
             ]);
           }),
         ]))),
