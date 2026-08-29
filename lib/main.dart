@@ -22,6 +22,7 @@ import 'core/app_update_service.dart';
 import 'core/storage_service.dart';
 import 'core/notification_service.dart';
 import 'features/player/player_page.dart';
+import 'features/player/network_player_page.dart';
 
 final youtubeServiceProvider = Provider((ref) => YoutubeService());
 final downloadServiceProvider = Provider((ref) => DownloadService());
@@ -118,15 +119,46 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   void initState() {
     super.initState();
     _firstLaunchCheck();
-    // Her açılışta otomatik kontrol (açık ise) - varsa ayarlarda yükle kısmına yönlendir
-    AppUpdateService().checkAndUpdateSilently().then((_) async {
+    // Her açılışta güncelleme tara - varsa dialog ile sor
+    Future.delayed(const Duration(seconds: 2), () async {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('auto_update_enabled') ?? true;
+      if (!enabled) return;
+      // Aralığa göre kontrol et
+      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      final last = prefs.getInt('last_update_check') ?? 0;
+      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
+      if (hoursPassed < intervalHours) return;
       final res = await AppUpdateService().checkForUpdateManual();
       if (res!=null && res['hasUpdate']==true && mounted) {
-        // Kullanıcıyı ayarlardaki yükle kısmına götür (3. sekme index 3)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Yeni güncelleme var! Ayarlar > Güncellemeleri denetle'.tr()), action: SnackBarAction(label: 'Git'.tr(), onPressed: ()=> setState(()=> _idx=3)), behavior: SnackBarBehavior.floating));
+        final current = res['current'];
+        final latest = res['latest'];
+        showDialog(context: context, builder: (c)=> AlertDialog(
+          title: Row(children: [Icon(Icons.system_update_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('Güncelleme var!')]),
+          content: Text('Geliştirici yeni bir sürüm yayınladı ($current → $latest). Güncellensin mi?'),
+          actions: [
+            TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Daha sonra'.tr())),
+            FilledButton(onPressed: () async {
+              Navigator.pop(c);
+              // Direkt ayarlara götür ve indirmeyi başlat
+              setState(()=> _idx=3);
+              // Ayarlardaki manuel kontrolü tetiklemek için snackbar
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ayarlar > Güncellemeleri denetle ile yükleyebilirsin'), behavior: SnackBarBehavior.floating));
+            }, child: Text('Güncelle'.tr())),
+          ],
+        ));
       }
     });
-    Timer.periodic(const Duration(hours: 6), (_) => AppUpdateService().checkAndUpdateSilently());
+    // Periyodik kontrol - ayardaki aralığa göre
+    Timer.periodic(const Duration(hours: 1), (_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('auto_update_enabled') ?? true;
+      if (!enabled) return;
+      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      final last = prefs.getInt('last_update_check') ?? 0;
+      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
+      if (hoursPassed >= intervalHours) AppUpdateService().checkAndUpdateSilently();
+    });
   }
 
   Future<void> _firstLaunchCheck() async {
@@ -561,7 +593,15 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
                 const SizedBox(height: 8),
                 ..._filteredStreams().asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
-                if (_downloading) LinearProgressIndicator(value: _progress, borderRadius: BorderRadius.circular(99), minHeight: 8),
+                if (_downloading) Row(children: [
+                  Expanded(child: Column(children: [
+                    LinearProgressIndicator(value: _progress, borderRadius: BorderRadius.circular(99), minHeight: 8),
+                    const SizedBox(height: 4),
+                    Text('${(_progress*100).toStringAsFixed(0)}% - indiriliyor...', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                  ])),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(onPressed: (){ ref.read(downloadServiceProvider).cancel(); setState(()=> _downloading=false); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İptal edildi'))); }, icon: const Icon(Icons.cancel_rounded, size:16), label: const Text('İptal')),
+                ]),
                 const SizedBox(height: 10),
                 SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _downloading ? null : _download, icon: Icon(_savedPath != null ? Icons.check_circle_rounded : Icons.download_rounded), label: Text(_savedPath != null ? 'download_again'.tr() : 'download'.tr()))),
                 if (_savedPath != null) Padding(padding: const EdgeInsets.only(top: 8), child: SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerPage(path: _savedPath!, title: _video!.title))), icon: const Icon(Icons.play_arrow_rounded), label: Text('play'.tr())))),
@@ -587,10 +627,20 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
             const SizedBox(height: 6),
             Text(v.author, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: OutlinedButton.icon(onPressed: ()=> Navigator.pop(c), icon: const Icon(Icons.close_rounded), label: Text('close'.tr()))),
-              const SizedBox(width:8),
-              Expanded(child: FilledButton.icon(onPressed: () async { Navigator.pop(c); final uri = Uri.parse('https://www.youtube.com/watch?v=${v.id}'); if(await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.play_arrow_rounded), label: Text('open_youtube'.tr()))),
+            Column(children: [
+              Row(children: [
+                Expanded(child: OutlinedButton.icon(onPressed: ()=> Navigator.pop(c), icon: const Icon(Icons.close_rounded), label: Text('close'.tr()))),
+                const SizedBox(width:8),
+                Expanded(child: FilledButton.icon(onPressed: () async { Navigator.pop(c); final uri = Uri.parse('https://www.youtube.com/watch?v=${v.id}'); if(await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.play_arrow_rounded), label: Text('open_youtube'.tr()))),
+              ]),
+              const SizedBox(height:8),
+              SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: (){
+                Navigator.pop(c);
+                // En iyi muxed stream ile uygundada izle
+                final best = _video!.streams.where((s)=> s.type=='muxed').toList();
+                final url = best.isNotEmpty ? best.first.url : _video!.streams.first.url;
+                Navigator.push(context, MaterialPageRoute(builder: (_)=> NetworkPlayerPage(url: url, title: v.title)));
+              }, icon: const Icon(Icons.ondemand_video_rounded), label: const Text('Uygulamada izle'), style: FilledButton.styleFrom(backgroundColor: Colors.deepPurple))),
             ]),
           ])),
         ])));
@@ -701,10 +751,11 @@ class FavoritesTab extends StatelessWidget { const FavoritesTab({super.key}); @o
 class SettingsTab extends ConsumerStatefulWidget { const SettingsTab({super.key}); @override ConsumerState<SettingsTab> createState()=> _SettingsTabState();}
 class _SettingsTabState extends ConsumerState<SettingsTab> {
   bool _autoUpdate = true;
+  int _interval = 6;
   bool _checking = false;
   String? _status;
   @override void initState(){ super.initState(); _load(); }
-  Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> _autoUpdate = p.getBool('auto_update_enabled') ?? true); }
+  Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = p.getInt('update_interval_hours') ?? 6 }); }
   Future<void> _toggleAuto(bool v) async { setState(()=> _autoUpdate=v); final p=await SharedPreferences.getInstance(); await p.setBool('auto_update_enabled', v); }
   Future<void> _manualCheck() async {
     setState(()=> _checking=true);
@@ -777,6 +828,26 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           Text('auto_update_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 12),
           SwitchListTile(value: _autoUpdate, title: Text(_autoUpdate ? 'auto_on'.tr() : 'auto_off'.tr()), subtitle: Text(_autoUpdate ? 'auto_on_desc'.tr() : 'auto_off_desc'.tr()), onChanged: _toggleAuto, contentPadding: EdgeInsets.zero),
+          if (_autoUpdate) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(Icons.timer_rounded, size:16, color: Colors.grey[600]),
+              const SizedBox(width:6),
+              Text('Kontrol aralığı', style: TextStyle(fontSize:12, color: Colors.grey[600])),
+              const Spacer(),
+              DropdownButton<int>(
+                value: _interval,
+                underline: Container(height:1, color: Colors.grey[300]),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 saat')),
+                  DropdownMenuItem(value: 6, child: Text('6 saat')),
+                  DropdownMenuItem(value: 12, child: Text('12 saat')),
+                  DropdownMenuItem(value: 24, child: Text('24 saat')),
+                ],
+                onChanged: (v) async { if(v==null) return; final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_hours', v); setState(()=> _interval=v); },
+              ),
+            ]),
+          ],
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _checking ? null : _manualCheck, icon: _checking ? const SizedBox(width:16,height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) : const Icon(Icons.refresh_rounded), label: Text('check_updates'.tr()))),
           if(_status!=null) Padding(padding: const EdgeInsets.only(top:8), child: Text(_status!, style: TextStyle(color: cs.primary, fontSize:12, fontWeight: FontWeight.w600))),
@@ -800,15 +871,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
               }, contentPadding: EdgeInsets.zero),
               const SizedBox(height: 4),
               SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
-                final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi ve izleme geçmişi silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
+                final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi, izleme geçmişi ve favoriler silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
                 if(ok!=true) return;
-                await StorageService.search.delete('list');
+                await StorageService.search.clear();
                 await StorageService.history.clear();
                 await StorageService.fav.clear();
-                if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geçmiş ve arama geçmişi temizlendi'), behavior: SnackBarBehavior.floating));
-                // Favoriler/Geçmiş sayfaları otomatik yenilensin diye setState tetikle
-                if(context.mounted) (context as Element).markNeedsBuild();
-              }, icon: const Icon(Icons.delete_sweep_rounded), label: const Text('Arama geçmişini ve geçmişi temizle'))),
+                // Hive box'ları dinleyen sayfalar otomatik yenilenecek (ValueListenableBuilder)
+                if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tümü temizlendi ✓'), behavior: SnackBarBehavior.floating, backgroundColor: Colors.green));
+              }, icon: const Icon(Icons.delete_sweep_rounded), label: const Text('Tüm geçmişi temizle'))),
             ]);
           }),
         ]))),
