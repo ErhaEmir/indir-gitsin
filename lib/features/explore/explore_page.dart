@@ -16,8 +16,12 @@ class _ExplorePageState extends State<ExplorePage> {
   void initState(){ super.initState(); _load(); }
   Future<void> _load() async {
     setState(()=> _loading=true);
-    final list = await YoutubeService().getTrending();
-    setState(()=> _trending=list);
+    try {
+      final list = await YoutubeService().getTrending();
+      setState(()=> _trending=list);
+    } catch(e){
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Trend yüklenemedi: $e')));
+    }
     setState(()=> _loading=false);
   }
   @override
