@@ -111,8 +111,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   void initState() {
     super.initState();
-    // Otomatik güncelleme sessiz kontrol
-    Future.delayed(const Duration(seconds: 3), () => AppUpdateService().checkAndUpdateSilently());
+    // Her açılışta otomatik kontrol (açık ise)
+    AppUpdateService().checkAndUpdateSilently();
     // 6 saatte bir kontrol
     Timer.periodic(const Duration(hours: 6), (_) => AppUpdateService().checkAndUpdateSilently());
   }
@@ -425,11 +425,30 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   Future<void> _manualCheck() async {
     setState(()=> _checking=true);
     try {
-      await AppUpdateService().checkAndUpdateSilently(force: true);
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('check_done'.tr()), behavior: SnackBarBehavior.floating));
-      setState(()=> _status='check_done'.tr());
+      final res = await AppUpdateService().checkForUpdateManual();
+      if(!mounted) return;
+      if(res==null){ setState(()=> _status='Hata: kontrol edilemedi'); return; }
+      final hasUpdate = res['hasUpdate'] as bool;
+      final current = res['current'];
+      final latest = res['latest'];
+      if(!hasUpdate){
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Zaten güncelsin ($current)'.tr()), behavior: SnackBarBehavior.floating));
+        setState(()=> _status='Güncelsin ($current)');
+      } else {
+        final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(
+          title: Text('Güncelleme algılandı'.tr()),
+          content: Text('Yeni sürüm $latest bulundu (mevcut $current). Yüklensin mi?'),
+          actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('Vazgeç'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('Yükle'.tr()))],
+        ));
+        if(ok==true){
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('İndiriliyor...'.tr()), behavior: SnackBarBehavior.floating));
+          final tag = latest as String;
+          await AppUpdateService().downloadAndInstall(tag, onProgress: (rx,total){});
+          setState(()=> _status='İndirildi, kurulum başlatıldı');
+        } else { setState(()=> _status='İptal edildi'); }
+      }
     } catch(e){ setState(()=> _status='Hata: $e'); }
-    finally { if(mounted) setState(()=> _checking=false); Future.delayed(const Duration(seconds: 3), ()=> setState(()=> _status=null));}
+    finally { if(mounted) setState(()=> _checking=false); Future.delayed(const Duration(seconds: 4), ()=> setState(()=> _status=null));}
   }
   Future<void> _openUrl(String url) async {
     try {

@@ -11,6 +11,7 @@ class AppUpdateService {
   static const checkInterval = Duration(hours: 6);
   final Dio _dio = Dio();
 
+  // Her açılışta kontrol için: interval kontrolü atlanabilir, force ile
   Future<void> checkAndUpdateSilently({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -49,6 +50,29 @@ class AppUpdateService {
     return null;
   }
 
+  // Manuel kontrol için: güncelleme var mı, varsa dialog ile sor
+  Future<Map<String, dynamic>?> checkForUpdateManual() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final current = info.version;
+      final latest = await _fetchLatestTag();
+      if (latest == null) return {'hasUpdate': false, 'current': current};
+      final latestVersion = latest.replaceFirst('v', '').split('-').first;
+      final hasUpdate = _isNewer(latestVersion, current);
+      return {'hasUpdate': hasUpdate, 'current': current, 'latest': latest, 'latestVersion': latestVersion};
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<String?> downloadAndInstall(String tag, {void Function(int, int)? onProgress}) async {
+    final apkUrl = await _fetchApkUrl(tag);
+    if (apkUrl == null) return null;
+    final path = await _downloadApk(apkUrl, tag, onProgress: onProgress);
+    if (path != null) await OpenFilex.open(path);
+    return path;
+  }
+
   Future<String?> _fetchApkUrl(String tag) async {
     final r = await _dio.get('https://api.github.com/repos/$repo/releases/tags/$tag');
     if (r.statusCode == 200) {
@@ -62,10 +86,10 @@ class AppUpdateService {
     return null;
   }
 
-  Future<String?> _downloadApk(String url, String tag) async {
+  Future<String?> _downloadApk(String url, String tag, {void Function(int, int)? onProgress}) async {
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/indir-gitsin-$tag.apk';
-    await _dio.download(url, path, options: Options(headers: {'User-Agent': 'IndirGitsin-Updater'}));
+    await _dio.download(url, path, onProgress: onProgress, options: Options(headers: {'User-Agent': 'IndirGitsin-Updater'}));
     final f = File(path);
     if (await f.exists() && await f.length() > 1000000) return path;
     return null;
