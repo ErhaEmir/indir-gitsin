@@ -63,5 +63,10 @@
   "options_count": "{count} seçenek",
   "play_error": "Oynatılamadı",
   "audio_hint": "Ses dosyası ise sistem oynatıcısıyla açmayı deneyin",
-  "version": "Sürüm"
+  "version": "Sürüm",
+  "preview_tap": "Önizlemek için dokun",
+  "close": "Kapat",
+  "open_youtube": "YouTube'da aç",
+  "Kapat": "Kapat",
+  "Önizlemek için dokun": "Önizlemek için dokun"
 }

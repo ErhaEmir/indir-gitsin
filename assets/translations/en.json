@@ -63,5 +63,10 @@
   "options_count": "{count} options",
   "play_error": "Could not play",
   "audio_hint": "If it's an audio file, try opening with system player",
-  "version": "Version"
+  "version": "Version",
+  "preview_tap": "Tap to preview",
+  "close": "Close",
+  "open_youtube": "Open in YouTube",
+  "Kapat": "Close",
+  "Önizlemek için dokun": "Tap to preview"
 }

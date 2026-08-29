@@ -164,6 +164,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   bool _downloading = false;
   String? _savedPath;
   StreamOption? _selected;
+  int _dlTab = 0; // 0 MP4, 1 MP3, 2 WEBM
   Timer? _debounce;
   late AnimationController _heroCtrl;
   late Animation<double> _heroAnim;
@@ -311,8 +312,21 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
     if (_video==null) return;
     final caps = await ref.read(youtubeServiceProvider).getCaptionTracks(_video!.id);
     if (caps.isEmpty) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Altyazı bulunamadı'))); return;}
-    // İlk altyazıyı indir (demo)
     if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Altyazı seçenekleri: ${caps.join(', ')}'), behavior: SnackBarBehavior.floating));
+  }
+
+  List<StreamOption> _filteredStreams() {
+    if (_video==null) return [];
+    if (_dlTab==0) { // MP4
+      final list = _video!.streams.where((s)=> s.container=='mp4').toList();
+      return list.isNotEmpty ? list : _video!.streams.where((s)=> s.type=='muxed').toList();
+    } else if (_dlTab==1) { // MP3 (audio)
+      final list = _video!.streams.where((s)=> s.type=='audioOnly').toList();
+      return list.isNotEmpty ? list : _video!.streams;
+    } else { // WEBM
+      final list = _video!.streams.where((s)=> s.container=='webm').toList();
+      return list.isNotEmpty ? list : _video!.streams.where((s)=> s.type=='videoOnly').toList();
+    }
   }
 
   Future<void> _download() async {
@@ -350,7 +364,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
     return Scaffold(
       appBar: AppBar(
         title: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(gradient: LinearGradient(colors: [cs.primary, cs.primary.withOpacity(0.8)]), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 18)),
+          Container(padding: const EdgeInsets.all(2), decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)), child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset('assets/icons/app_icon.png', width: 32, height: 32, fit: BoxFit.cover))),
           const SizedBox(width: 8),
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
@@ -442,15 +456,34 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
                 const SizedBox(height: 12),
                 Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('add_favorite'.tr()), const Spacer(), Text('options_count'.tr(namedArgs: {'count': '${_video!.streams.length}'}), style: const TextStyle(color: Colors.grey))]),
                 const SizedBox(height: 8),
-                // Hızlı profiller
+                // Hızlı profiller + 3'lü format sekmeleri
                 Wrap(spacing: 8, runSpacing: 6, children: [
                   ActionChip(label: Text('En iyi MP4'), avatar: const Icon(Icons.hd_rounded, size:16), onPressed: ()=> _applyProfile('best')),
                   ActionChip(label: const Text('MP3 256k'), avatar: const Icon(Icons.music_note_rounded, size:16), onPressed: ()=> _applyProfile('mp3')),
                   ActionChip(label: const Text('4K'), avatar: const Icon(Icons.high_quality_rounded, size:16), onPressed: ()=> _applyProfile('4k')),
                   ActionChip(label: Text('Altyazı'), avatar: const Icon(Icons.subtitles_rounded, size:16), onPressed: _downloadSubtitle),
                 ]),
+                const SizedBox(height: 12),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('MP4'), icon: Icon(Icons.videocam_rounded, size:16)),
+                    ButtonSegment(value: 1, label: Text('MP3'), icon: Icon(Icons.music_note_rounded, size:16)),
+                    ButtonSegment(value: 2, label: Text('WEBM'), icon: Icon(Icons.movie_rounded, size:16)),
+                  ],
+                  selected: {_dlTab},
+                  onSelectionChanged: (s){
+                    setState((){
+                      _dlTab = s.first;
+                      final list = _filteredStreams();
+                      if(list.isNotEmpty) _selected = list.first;
+                    });
+                  },
+                  style: ButtonStyle(visualDensity: VisualDensity.compact),
+                ),
+                const SizedBox(height: 4),
+                Text(_dlTab==0 ? 'MP4 - en uyumlu, her cihazda oynar' : _dlTab==1 ? 'MP3 - sadece ses, en küçük boyut' : 'WEBM - yüksek verim, modern codec', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                 const SizedBox(height: 8),
-                ..._video!.streams.asMap().entries.map((e) => _tile(e.value, e.key, cs)),
+                ..._filteredStreams().asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
                 if (_downloading) LinearProgressIndicator(value: _progress, borderRadius: BorderRadius.circular(99), minHeight: 8),
                 const SizedBox(height: 10),
@@ -468,7 +501,27 @@ class _HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin
   Widget _chip(String t, IconData i) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(99)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(i, size: 12, color: Colors.white), const SizedBox(width: 4), Text(t, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))]));
   Widget _videoCard(BuildContext c) {
     final v = _video!; final dur = v.duration != null ? '${v.duration!.inMinutes}:${(v.duration!.inSeconds%60).toString().padLeft(2,'0')}' : '';
-    return Card(child: Column(children: [Stack(children: [ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, height: 200, width: double.infinity, fit: BoxFit.cover)), Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)), child: Text(dur, style: const TextStyle(color: Colors.white, fontSize: 12))))]), Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(v.title, style: const TextStyle(fontWeight: FontWeight.w800), maxLines: 2), const SizedBox(height: 6), Text(v.author, style: TextStyle(color: Colors.grey[600], fontSize: 13))]))]));
+    return InkWell(
+      onTap: (){
+        showDialog(context: c, builder: (_) => Dialog(backgroundColor: Colors.transparent, insetPadding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ClipRRect(borderRadius: BorderRadius.circular(16), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, fit: BoxFit.cover)),
+          const SizedBox(height: 12),
+          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Theme.of(c).cardColor, borderRadius: BorderRadius.circular(12)), child: Column(children: [
+            Text(v.title, style: const TextStyle(fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(v.author, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: OutlinedButton.icon(onPressed: ()=> Navigator.pop(c), icon: const Icon(Icons.close_rounded), label: Text('close'.tr()))),
+              const SizedBox(width:8),
+              Expanded(child: FilledButton.icon(onPressed: () async { Navigator.pop(c); final uri = Uri.parse('https://www.youtube.com/watch?v=${v.id}'); if(await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.play_arrow_rounded), label: Text('open_youtube'.tr()))),
+            ]),
+          ])),
+        ])));
+      },
+      borderRadius: BorderRadius.circular(24),
+      child: Card(child: Column(children: [Stack(children: [ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, height: 200, width: double.infinity, fit: BoxFit.cover)), Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)), child: Text(dur, style: const TextStyle(color: Colors.white, fontSize: 12)))), Positioned.fill(child: Center(child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.black.withOpacity(0.35), shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36))))]), Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(v.title, style: const TextStyle(fontWeight: FontWeight.w800), maxLines: 2), const SizedBox(height: 6), Text(v.author, style: TextStyle(color: Colors.grey[600], fontSize: 13)), const SizedBox(height: 4), Text('Önizlemek için dokun'.tr(), style: TextStyle(color: Theme.of(c).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.w600))]))])),
+    );
   }
   Widget _tile(StreamOption s, int idx, ColorScheme cs) {
     final sel = _selected?.tag == s.tag && _selected?.type == s.type;
@@ -628,7 +681,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.language_rounded, color: cs.primary)), const SizedBox(width: 10), Text('language'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 12),
-          SegmentedButton<String>(segments: const [ButtonSegment(value:'tr', label: Text('Türkçe'), icon: Icon(Icons.flag_rounded)), ButtonSegment(value:'en', label: Text('English'), icon: Icon(Icons.flag_outlined))], selected: {context.locale.languageCode}, onSelectionChanged: (s){ final v=s.first; context.setLocale(Locale(v)); SharedPreferences.getInstance().then((p)=> p.setString('lang', v));}),
+          Wrap(spacing: 8, children: [
+            ChoiceChip(label: const Text('Türkçe'), selected: context.locale.languageCode=='tr', onSelected: (_){ context.setLocale(const Locale('tr')); SharedPreferences.getInstance().then((p)=> p.setString('lang','tr'));}),
+            ChoiceChip(label: const Text('English'), selected: context.locale.languageCode=='en', onSelected: (_){ context.setLocale(const Locale('en')); SharedPreferences.getInstance().then((p)=> p.setString('lang','en'));}),
+          ]),
         ]))),
         const SizedBox(height: 12),
         // Güncelleme kartı
@@ -641,6 +697,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _checking ? null : _manualCheck, icon: _checking ? const SizedBox(width:16,height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) : const Icon(Icons.refresh_rounded), label: Text('check_updates'.tr()))),
           if(_status!=null) Padding(padding: const EdgeInsets.only(top:8), child: Text(_status!, style: TextStyle(color: cs.primary, fontSize:12, fontWeight: FontWeight.w600))),
+        ]))),
+        // Kullanım kolaylaştırıcı ayarlar
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Colors.orange)), const SizedBox(width: 10), Text('Kullanım Kolaylığı', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          const SizedBox(height: 8),
+          FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
+            final p=s.data; final autoClip = p?.getBool('auto_clipboard') ?? true;
+            final vib = p?.getBool('haptic') ?? true;
+            final notif = p?.getBool('notify_done') ?? true;
+            return Column(children: [
+              SwitchListTile(value: autoClip, title: const Text('Panoya otomatik bak'), subtitle: const Text('Link kopyalayınca direkt hazırla', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_clipboard', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: vib, title: const Text('Titreşim geri bildirimi'), subtitle: const Text('Dokunmalarda haptic', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('haptic', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: notif, title: const Text('İndirme bitince SnackBar'), subtitle: const Text('Bitince aç butonu göster', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('notify_done', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              const SizedBox(height: 4),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async { await StorageService.search.delete('list'); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arama geçmişi temizlendi')));}, icon: const Icon(Icons.history_rounded), label: const Text('Arama geçmişini temizle'))),
+            ]);
+          }),
         ]))),
         const SizedBox(height: 12),
         // Hakkında - portatif kullanıcı dostu
