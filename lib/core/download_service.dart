@@ -84,7 +84,7 @@ class DownloadService {
     _cancelToken = CancelToken();
 
     // MP3/WEBM için Piped öncelikli (Notube gibi) - en güvenilir
-    if ((ext == 'mp3' || ext == 'webm' || streamTag.startsWith('piped-')) && videoId != null) {
+    if ((ext == 'mp3' || ext == 'webm' || (streamTag?.startsWith('piped-') ?? false)) && videoId != null) {
       try {
         final pipedUrl = await _getPipedUrl(videoId, ext);
         if (pipedUrl != null) {
