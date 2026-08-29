@@ -142,9 +142,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Daha sonra'.tr())),
             FilledButton(onPressed: () async {
               Navigator.pop(c);
-              // Direkt ayarlara götür ve indirmeyi başlat
-              setState(()=> _idx=3);
-              // Ayarlardaki manuel kontrolü tetiklemek için snackbar
+              // Direkt ayarlara götür (5 sekme: 0 Home,1 Keşfet,2 Dosyalar,3 Favoriler,4 Ayarlar)
+              setState(()=> _idx=4);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ayarlar > Güncellemeleri denetle ile yükleyebilirsin'), behavior: SnackBarBehavior.floating));
             }, child: Text('Güncelle'.tr())),
           ],
