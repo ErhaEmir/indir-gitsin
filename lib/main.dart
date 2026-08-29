@@ -494,8 +494,19 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                   ]),
                 ),
               ),
-              // Arama (in-app YouTube search)
+              // Davet et (viral)
+              Card(
+                color: Colors.orange.withOpacity(0.08),
+                child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
+                  Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.share_rounded, color: Colors.white, size:18)),
+                  const SizedBox(width:10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Arkadaşını davet et', style: const TextStyle(fontWeight: FontWeight.w800)), Text('İndir Gitsin\'i paylaş, herkes hızlı indirsin', style: TextStyle(color: Colors.grey[600], fontSize:11))])),
+                  FilledButton.tonalIcon(onPressed: () async { await Share.share('İndir Gitsin - YouTube & Music indirici https://github.com/ErhaEmir/indir-gitsin/releases'); }, icon: const Icon(Icons.send_rounded, size:16), label: const Text('Davet')),
+                ])),
+              ),
               const SizedBox(height: 12),
+              // Arama (in-app YouTube search)
+              const SizedBox(height: 4),
               TextField(
                 controller: _searchCtrl,
                 decoration: InputDecoration(

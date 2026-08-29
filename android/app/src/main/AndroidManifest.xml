@@ -54,6 +54,7 @@
                 <data android:scheme="http"  android:host="youtu.be" />
             </intent-filter>
 
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <meta-data android:name="flutterEmbedding" android:value="2" />
         </activity>
         <meta-data android:name="flutterEmbedding" android:value="2" />

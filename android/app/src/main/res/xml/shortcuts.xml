@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="paste_and_download"
+        android:enabled="true"
+        android:icon="@mipmap/launcher_icon"
+        android:shortcutShortLabel="@string/shortcut_paste"
+        android:shortcutLongLabel="@string/shortcut_paste_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.indirgitsin.app"
+            android:targetClass="com.indirgitsin.app.MainActivity" />
+    </shortcut>
+</shortcuts>
