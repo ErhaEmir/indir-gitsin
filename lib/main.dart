@@ -136,8 +136,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         final current = res['current'];
         final latest = res['latest'];
         showDialog(context: context, builder: (c)=> AlertDialog(
-          title: Row(children: [Icon(Icons.system_update_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('Güncelleme var!')]),
-          content: Text('Geliştirici yeni bir sürüm yayınladı ($current → $latest). Güncellensin mi?'),
+          title: Row(children: [Icon(Icons.system_update_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('update_available'.tr())]),
+          content: Text('Güncelleme var! $current → $latest güncellensin mi?'),
           actions: [
             TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Daha sonra'.tr())),
             FilledButton(onPressed: () async {
@@ -211,7 +211,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         },
         destinations: [
           NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
-          NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'Keşfet'),
+          NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'explore'.tr()),
           NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
           NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
           NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
@@ -468,8 +468,11 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
       ),
-      body: CustomScrollView(
-        controller: _scrollCtrl,
+      body: RefreshIndicator(
+        onRefresh: () async { _clear(); FocusScope.of(context).unfocus(); },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          controller: _scrollCtrl,
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
@@ -581,10 +584,10 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                 const SizedBox(height: 8),
                 // Hızlı profiller + 3'lü format sekmeleri
                 Wrap(spacing: 8, runSpacing: 6, children: [
-                  ActionChip(label: Text('En iyi MP4'), avatar: const Icon(Icons.hd_rounded, size:16), onPressed: ()=> _applyProfile('best')),
-                  ActionChip(label: const Text('MP3 256k'), avatar: const Icon(Icons.music_note_rounded, size:16), onPressed: ()=> _applyProfile('mp3')),
+                  ActionChip(label: Text('best_mp4'.tr()), avatar: const Icon(Icons.hd_rounded, size:16), onPressed: ()=> _applyProfile('best')),
+                  ActionChip(label: Text('mp3_256'.tr()), avatar: const Icon(Icons.music_note_rounded, size:16), onPressed: ()=> _applyProfile('mp3')),
                   ActionChip(label: const Text('4K'), avatar: const Icon(Icons.high_quality_rounded, size:16), onPressed: ()=> _applyProfile('4k')),
-                  ActionChip(label: Text('Altyazı'), avatar: const Icon(Icons.subtitles_rounded, size:16), onPressed: _downloadSubtitle),
+                  ActionChip(label: Text('subtitle_chip'.tr()), avatar: const Icon(Icons.subtitles_rounded, size:16), onPressed: _downloadSubtitle),
                 ]),
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
@@ -625,6 +628,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
             ]),
           ),
         ],
+      ),
       ),
     );
   }
@@ -720,27 +724,27 @@ class FilesTabState extends State<FilesTab> {
   }
   Future<void> _rename(File f) async {
     final ctrl = TextEditingController(text: f.path.split('/').last);
-    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('Yeniden adlandır'), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Kaydet'))]));
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('Yeniden adlandır'), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
     if (ok==true && ctrl.text.isNotEmpty) { final dir = (await _getDir()).path; await f.rename('$dir/${ctrl.text}'); _load(); }
   }
   Future<void> _delete(File f) async {
-    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Silinsin mi?'), content: Text(f.path.split('/').last), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('delete_confirm'.tr()), content: Text(f.path.split('/').last), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('delete'.tr()))]));
     if (ok==true) { await f.delete(); _load(); }
   }
   Future<void> _pickStorage() async {
     final ctrl = TextEditingController(text: (await _getDir()).path);
-    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Depolama Yeri'), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: ctrl, decoration: const InputDecoration(hintText: '/storage/emulated/0/Download/IndirGitsin')), const SizedBox(height:8), const Text('SD kart yolu girebilirsin', style: TextStyle(fontSize:11, color: Colors.grey))]), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Kaydet'))]));
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('choose_storage'.tr()), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: ctrl, decoration: const InputDecoration(hintText: '/storage/emulated/0/Download/IndirGitsin')), const SizedBox(height:8), Text('storage_desc'.tr(), style: TextStyle(fontSize:11, color: Colors.grey))]), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
     if (ok==true) { final p=await SharedPreferences.getInstance(); await p.setString('custom_download_path', ctrl.text.trim()); _load(); }
   }
   @override Widget build(BuildContext context){
     return Scaffold(
       appBar: AppBar(title: Text('files'.tr()), actions: [
-        PopupMenuButton<String>(onSelected: (v){ if(v=='storage') _pickStorage(); else { setState(()=> _sort=v); _load(); }}, itemBuilder: (_)=> [
-          const PopupMenuItem(value:'date', child: Text('Tarihe göre')),
-          const PopupMenuItem(value:'size', child: Text('Boyuta göre')),
-          const PopupMenuItem(value:'name', child: Text('İsme göre')),
+        PopupMenuButton<String>(onSelected: (v){ FocusScope.of(context).unfocus(); if(v=='storage') _pickStorage(); else { setState(()=> _sort=v); _load(); }}, itemBuilder: (_)=> [
+          PopupMenuItem(value:'date', child: Text('sort_date'.tr())),
+          PopupMenuItem(value:'size', child: Text('sort_size'.tr())),
+          PopupMenuItem(value:'name', child: Text('sort_name'.tr())),
           const PopupMenuDivider(),
-          const PopupMenuItem(value:'storage', child: Row(children: [Icon(Icons.folder_open_rounded, size:16), SizedBox(width:8), Text('Depolama yeri seç')])),
+          PopupMenuItem(value:'storage', child: Row(children: [const Icon(Icons.folder_open_rounded, size:16), const SizedBox(width:8), Text('choose_storage'.tr())])),
         ]),
       ]),
       body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), TextButton(onPressed: _load, child: const Text('Yenile'))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
@@ -754,9 +758,9 @@ class FilesTabState extends State<FilesTab> {
             else if(v=='share'){ await Share.shareXFiles([XFile(f.path)]); }
             else if(v=='rename') await _rename(f);
             else if(v=='delete') await _delete(f);
-          }, itemBuilder: (_)=> [const PopupMenuItem(value:'play', child: Text('Oynat/Aç')), const PopupMenuItem(value:'share', child: Text('Paylaş')), const PopupMenuItem(value:'rename', child: Text('Yeniden adlandır')), const PopupMenuItem(value:'delete', child: Text('Sil'))]),
+          }, itemBuilder: (_)=> [const PopupMenuItem(value:'play', child: Text('play'.tr())), const PopupMenuItem(value:'share', child: Text('share'.tr())), const PopupMenuItem(value:'rename', child: Text('rename'.tr())), const PopupMenuItem(value:'delete', child: Text('Sil'))]),
           onTap: ()=> isVideo ? Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))) : OpenFilex.open(f.path),
-          onLongPress: ()=> showModalBottomSheet(context: context, builder: (_)=> Wrap(children: [ListTile(leading: const Icon(Icons.edit_rounded), title: const Text('Yeniden adlandır'), onTap: (){ Navigator.pop(context); _rename(f);}), ListTile(leading: const Icon(Icons.share_rounded), title: const Text('Paylaş'), onTap: ()async{ Navigator.pop(context); await Share.shareXFiles([XFile(f.path)]);}), ListTile(leading: const Icon(Icons.delete_rounded, color: Colors.red), title: const Text('Sil', style: TextStyle(color: Colors.red)), onTap: (){ Navigator.pop(context); _delete(f);})])),
+          onLongPress: ()=> showModalBottomSheet(context: context, builder: (_)=> Wrap(children: [ListTile(leading: const Icon(Icons.edit_rounded), title: Text('rename'.tr()), onTap: (){ Navigator.pop(context); _rename(f);}), ListTile(leading: const Icon(Icons.share_rounded), title: Text('share'.tr()), onTap: ()async{ Navigator.pop(context); await Share.shareXFiles([XFile(f.path)]);}), ListTile(leading: const Icon(Icons.delete_rounded, color: Colors.red), title: const Text('Sil', style: TextStyle(color: Colors.red)), onTap: (){ Navigator.pop(context); _delete(f);})])),
         );
       })),
     );
@@ -886,7 +890,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         ]))),
         // Kullanım kolaylaştırıcı ayarlar
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Colors.orange)), const SizedBox(width: 10), Text('Kullanım Kolaylığı', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Colors.orange)), const SizedBox(width: 10), Text('ease_of_use'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 8),
           FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
             final p=s.data; final autoClip = p?.getBool('auto_clipboard') ?? true;
@@ -895,21 +899,21 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             final autoFolder = p?.getBool('auto_folder') ?? true;
             final defaultFormat = p?.getString('default_format') ?? 'mp4';
             return Column(children: [
-              SwitchListTile(value: autoClip, title: const Text('Panoya otomatik bak'), subtitle: const Text('Link kopyalayınca direkt hazırla', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_clipboard', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: vib, title: const Text('Titreşim geri bildirimi'), subtitle: const Text('Dokunmalarda haptic', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('haptic', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: notif, title: const Text('İndirme bitince bildirim'), subtitle: const Text('Video indirildi diye bildirim at', style: TextStyle(fontSize:12)), onChanged: (v) async { 
+              SwitchListTile(value: autoClip, title: Text('auto_clipboard'.tr()), subtitle: Text('auto_clipboard_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_clipboard', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: vib, title: Text('haptic_feedback'.tr()), subtitle: Text('haptic_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('haptic', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: notif, title: Text('notify_on_done'.tr()), subtitle: Text('notify_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { 
                 final pr=await SharedPreferences.getInstance(); 
                 await pr.setBool('notify_enabled', v); 
                 if(v) { await Permission.notification.request(); }
                 (c as Element).markNeedsBuild(); 
               }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: autoFolder, title: const Text('Otomatik klasör ayır'), subtitle: const Text('MP3 → Müzikler, MP4 → Videolar', style: TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: autoFolder, title: Text('auto_folder'.tr()), subtitle: Text('auto_folder_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
               const SizedBox(height: 8),
-              Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), const Text('Varsayılan format', style: TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: const [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); })]),
+              Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), Text('default_format'.tr(), style: const TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); })]),
 
               const SizedBox(height: 4),
               SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
-                final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi, izleme geçmişi ve favoriler silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: const Text('İptal')), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: const Text('Sil'))]));
+                final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: const Text('Temizlensin mi?'), content: const Text('Arama geçmişi, izleme geçmişi ve favoriler silinecek.'), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('delete'.tr()))]));
                 if(ok!=true) return;
                 await StorageService.search.clear();
                 await StorageService.history.clear();
