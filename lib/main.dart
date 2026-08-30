@@ -384,7 +384,10 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     } on TimeoutException {
       setState(() => _error = 'timeout'.tr());
     } catch (e) {
-      setState(() => _error = '${'failed'.tr()}: $e');
+      final prefs = await SharedPreferences.getInstance();
+      final isDev = prefs.getBool('dev_mode') ?? false;
+      final msg = isDev ? '${'failed'.tr()}: $e' : 'İşlem gerçekleştirilemedi';
+      setState(() => _error = msg);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -482,13 +485,18 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'downloaded'.tr()}: ${path.split('/').last}'), action: SnackBarAction(label: 'open'.tr(), onPressed: () => OpenFilex.open(path)), behavior: SnackBarBehavior.floating));
     } catch (e) {
+      final prefs = await SharedPreferences.getInstance();
+      final isDev = prefs.getBool('dev_mode') ?? false;
       final raw = e.toString();
-      String friendly = raw;
-      if (raw.contains('lisans') || raw.contains('Lisans')) friendly = raw;
-      else if (raw.contains('403')) friendly = 'Erişim reddedildi (403): Bu video MP3/WEBM formatında lisans korumalı veya bölge kısıtlı olabilir. MP4 deneyin veya farklı kalite seçin.';
-      else if (raw.contains('404')) friendly = 'Stream bulunamadı (404): Video silinmiş veya format desteklenmiyor.';
-      else if (raw.contains('Timeout') || raw.contains('Socket')) friendly = 'Bağlantı zaman aşımı: İnternet yavaş, tekrar dene.';
-      else friendly = '${'error'.tr()}: $raw';
+      String friendly;
+      if (isDev) {
+        friendly = raw; // dev modda teknik detay göster (404 dahil)
+      } else {
+        if (raw.contains('lisans') || raw.contains('Lisans')) friendly = 'İşlem gerçekleştirilemedi';
+        else if (raw.contains('403') || raw.contains('404')) friendly = 'İşlem gerçekleştirilemedi';
+        else if (raw.contains('Timeout') || raw.contains('Socket')) friendly = 'İşlem gerçekleştirilemedi';
+        else friendly = 'İşlem gerçekleştirilemedi';
+      }
       setState(() { _downloading = false; _error = friendly; });
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendly), backgroundColor: Theme.of(context).colorScheme.error, behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 5), action: SnackBarAction(label: 'Anladım', textColor: Colors.white, onPressed: (){})));
     }
@@ -971,6 +979,88 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             ]);
           }),
         ]))),
+        const SizedBox(height: 12),
+        // Geliştirici Test Modu (PIN 192168) - Hakkında üstünde, normalde kapalı
+        Card(
+          color: Colors.deepPurple.withOpacity(0.06),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: FutureBuilder<SharedPreferences>(
+              future: SharedPreferences.getInstance(),
+              builder: (c, snap) {
+                final isDev = snap.data?.getBool('dev_mode') ?? false;
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bug_report_rounded, color: Colors.deepPurple)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici Test Modu', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), Text('Sadece PIN bilenler açabilir', style: TextStyle(color: Colors.grey[600], fontSize: 11))])),
+                    Switch(
+                      value: isDev,
+                      onChanged: (v) async {
+                        if (v) {
+                          final pinCtrl = TextEditingController();
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (d) => AlertDialog(
+                              title: const Text('PIN Girin'),
+                              content: Column(mainAxisSize: MainAxisSize.min, children: [
+                                const Text('Geliştirici modunu açmak için 6 haneli PIN girin'),
+                                const SizedBox(height: 12),
+                                TextField(controller: pinCtrl, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(hintText: '••••••', border: OutlineInputBorder()), obscureText: true),
+                              ]),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
+                                FilledButton(onPressed: () => Navigator.pop(d, pinCtrl.text == '192168'), child: const Text('Onayla')),
+                              ],
+                            ),
+                          );
+                          if (ok == true) {
+                            final p = await SharedPreferences.getInstance();
+                            await p.setBool('dev_mode', true);
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geliştirici modu açıldı ✓'), backgroundColor: Colors.deepPurple));
+                            (c as Element).markNeedsBuild();
+                          } else {
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red));
+                          }
+                        } else {
+                          final p = await SharedPreferences.getInstance();
+                          await p.setBool('dev_mode', false);
+                          (c as Element).markNeedsBuild();
+                        }
+                      },
+                    ),
+                  ]),
+                  if (isDev) ...[
+                    const Divider(height: 16),
+                    Text('Test Araçları', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.deepPurple[700], fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      ActionChip(label: const Text('İlk kurulumu simüle et'), avatar: const Icon(Icons.restart_alt_rounded, size:16), onPressed: () async {
+                        final p = await SharedPreferences.getInstance();
+                        await p.remove('first_launch_done');
+                        await p.remove('last_update_check');
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sıfırlandı - uygulamayı yeniden başlat, ilk kurulum ekranı gelecek')));
+                      }),
+                      ActionChip(label: const Text('Önbelleği temizle'), avatar: const Icon(Icons.cleaning_services_rounded, size:16), onPressed: () async {
+                        await StorageService.search.clear();
+                        ref.read(youtubeServiceProvider).clearCache();
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Önbellek temizlendi')));
+                      }),
+                      ActionChip(label: const Text('Tüm verileri sıfırla'), avatar: const Icon(Icons.delete_forever_rounded, size:16), onPressed: () async {
+                        await StorageService.history.clear();
+                        await StorageService.fav.clear();
+                        await StorageService.search.clear();
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tüm veriler sıfırlandı')));
+                      }),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text('Hata detayları artık 404 gibi teknik kodlarla gösterilecek', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+                  ],
+                ]);
+              },
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         // Hakkında - portatif kullanıcı dostu
         Card(
