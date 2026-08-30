@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
@@ -1066,13 +1067,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             if (approved != true) return;
                             // Kırmızı bildirim (siyah yazı)
                             try {
-                              const androidDetails = AndroidNotificationDetails(
+                              final androidDetails = AndroidNotificationDetails(
                                 'dev_mode_channel',
                                 'Geliştirici Modu',
                                 channelDescription: 'Geliştirici modu uyarısı',
                                 importance: Importance.high,
                                 priority: Priority.high,
-                                color: Color(0xFFFF0000),
+                                color: const Color(0xFFFF0000),
                                 icon: '@mipmap/launcher_icon',
                               );
                               await NotificationService.showCustom(
