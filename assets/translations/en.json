@@ -122,5 +122,8 @@
   "update_desc": "Developer released a new version ({current} → {latest}). Update?",
   "go": "Go",
   "later_btn": "Later",
-  "update_btn": "Update"
+  "update_btn": "Update",
+  "control_interval": "Check interval",
+  "hour": "hour",
+  "version_label": "Version"
 }

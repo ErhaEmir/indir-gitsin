@@ -869,16 +869,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
             Row(children: [
               Icon(Icons.timer_rounded, size:16, color: Colors.grey[600]),
               const SizedBox(width:6),
-              Text('Kontrol aralığı', style: TextStyle(fontSize:12, color: Colors.grey[600])),
+              Text('control_interval'.tr(), style: TextStyle(fontSize:12, color: Colors.grey[600])),
               const Spacer(),
               DropdownButton<int>(
                 value: _interval,
                 underline: Container(height:1, color: Colors.grey[300]),
                 items: const [
-                  DropdownMenuItem(value: 1, child: Text('1 saat')),
-                  DropdownMenuItem(value: 6, child: Text('6 saat')),
-                  DropdownMenuItem(value: 12, child: Text('12 saat')),
-                  DropdownMenuItem(value: 24, child: Text('24 saat')),
+                  DropdownMenuItem(value: 1, child: Text('1 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 6, child: Text('6 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 12, child: Text('12 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 24, child: Text('24 ' + 'hour'.tr())),
                 ],
                 onChanged: (v) async { if(v==null) return; final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_hours', v); setState(()=> _interval=v); },
               ),
@@ -920,7 +920,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 await StorageService.fav.clear();
                 // Hive box'ları dinleyen sayfalar otomatik yenilenecek (ValueListenableBuilder)
                 if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tümü temizlendi ✓'), behavior: SnackBarBehavior.floating, backgroundColor: Colors.green));
-              }, icon: const Icon(Icons.delete_sweep_rounded), label: const Text('Tüm geçmişi temizle'))),
+              }, icon: const Icon(Icons.delete_sweep_rounded), label: Text('clear_all'.tr()))),
             ]);
           }),
         ]))),

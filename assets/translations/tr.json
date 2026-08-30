@@ -122,5 +122,8 @@
   "update_desc": "Geliştirici yeni bir sürüm yayınladı ({current} → {latest}). Güncellensin mi?",
   "go": "Git",
   "later_btn": "Daha sonra",
-  "update_btn": "Güncelle"
+  "update_btn": "Güncelle",
+  "control_interval": "Kontrol aralığı",
+  "hour": "saat",
+  "version_label": "Sürüm"
 }
