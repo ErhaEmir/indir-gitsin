@@ -15,6 +15,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'core/theme.dart';
 import 'core/youtube_service.dart';
 import 'core/download_service.dart';
@@ -162,32 +163,64 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     });
   }
 
+  Future<bool> _hasStoragePermission() async {
+    if (Platform.isAndroid) {
+      final info = await DeviceInfoPlugin().androidInfo;
+      if (info.version.sdkInt >= 33) {
+        final photos = await Permission.photos.status;
+        final videos = await Permission.videos.status;
+        return photos.isGranted || videos.isGranted;
+      }
+      return (await Permission.storage.status).isGranted;
+    }
+    return true;
+  }
+
   Future<void> _firstLaunchCheck() async {
     final prefs = await SharedPreferences.getInstance();
     final done = prefs.getBool('first_launch_done') ?? false;
-    if (done) return;
+    final hasStorage = await _hasStoragePermission();
+    final hasNotif = await Permission.notification.isGranted;
+    // Her açılışta denetle, eksikse tekrar göster
+    if (done && hasStorage && hasNotif) return;
     if (!mounted) return;
+    final isFirst = !done;
     await showDialog(context: context, barrierDismissible: false, builder: (c)=> AlertDialog(
-      title: Row(children: [Icon(Icons.verified_user_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('Hoş geldin!'.tr())]),
+      title: Row(children: [Icon(Icons.verified_user_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text(isFirst ? 'Hoş geldin!'.tr() : 'İzinler gerekli')]),
       content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('İndir Gitsin güvenle çalışmak için izinlere ihtiyaç duyar.'.tr(), style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(isFirst ? 'İndir Gitsin güvenle çalışmak için izinlere ihtiyaç duyar.'.tr() : 'Bazı izinler eksik, uygulama düzgün çalışmayabilir.', style: const TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 10),
-        Row(children: [const Icon(Icons.folder_rounded, size:18), const SizedBox(width:6), Expanded(child: Text('Depolama: videoları /Download/IndirGitsin klasörüne kaydeder'))]),
+        Row(children: [Icon(Icons.photo_library_rounded, size:18, color: hasStorage? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('Galeri & Dosyalar: videoları kaydetmek ve oynatmak için (tam erişim önerilir)', style: TextStyle(color: hasStorage? Colors.green: Colors.orange, fontSize: 12)))]),
         const SizedBox(height:6),
-        Row(children: [const Icon(Icons.notifications_rounded, size:18), const SizedBox(width:6), Expanded(child: Text('Bildirim: indirme bitince haber verir'))]),
+        Row(children: [Icon(Icons.notifications_rounded, size:18, color: hasNotif? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('Bildirim: indirme bitince haber verir', style: TextStyle(color: hasNotif? Colors.green: Colors.orange, fontSize: 12)))]),
         const SizedBox(height:10),
-        Text('İzinler ayarlardan her zaman değiştirilebilir.', style: TextStyle(color: Colors.grey[600], fontSize:12)),
+        Text('İzinler ayarlardan her zaman değiştirilebilir. Kullanılmadığında ayarlardan kaldırmanız önerilir.', style: TextStyle(color: Colors.grey[600], fontSize:11)),
       ])),
       actions: [
         TextButton(onPressed: () async { await prefs.setBool('first_launch_done', true); if(mounted) Navigator.pop(c); }, child: Text('Daha sonra'.tr())),
         FilledButton(onPressed: () async {
           await prefs.setBool('first_launch_done', true);
-          // İzin iste
-          try { await Permission.storage.request(); await Permission.notification.request(); } catch(_){}
+          try {
+            if (Platform.isAndroid) {
+              final info = await DeviceInfoPlugin().androidInfo;
+              if (info.version.sdkInt >= 33) {
+                await Permission.photos.request();
+                await Permission.videos.request();
+                await Permission.audio.request();
+              } else {
+                await Permission.storage.request();
+                await Permission.manageExternalStorage.request();
+              }
+            }
+            await Permission.notification.request();
+          } catch(_){}
           await NotificationService.init();
           if(mounted) Navigator.pop(c);
-          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('İzinler kaydedildi'.tr())));
+          final okStorage = await _hasStoragePermission();
+          final okNotif = await Permission.notification.isGranted;
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okStorage && okNotif ? 'İzinler kaydedildi'.tr() : 'Bazı izinler verilmedi, ayarlardan açabilirsin')));
         }, child: Text('İzin ver'.tr())),
+        TextButton(onPressed: () async { await openAppSettings(); }, child: const Text('Ayarları aç')),
       ],
     ));
   }
