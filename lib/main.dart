@@ -190,11 +190,24 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(isFirst ? 'İndir Gitsin güvenle çalışmak için izinlere ihtiyaç duyar.'.tr() : 'Bazı izinler eksik, uygulama düzgün çalışmayabilir.', style: const TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 10),
-        Row(children: [Icon(Icons.photo_library_rounded, size:18, color: hasStorage? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('Galeri & Dosyalar: videoları kaydetmek ve oynatmak için (tam erişim önerilir)', style: TextStyle(color: hasStorage? Colors.green: Colors.orange, fontSize: 12)))]),
+        Row(children: [Icon(Icons.photo_library_rounded, size:18, color: hasStorage? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('gallery_perm_full'.tr(), style: TextStyle(color: hasStorage? Colors.green: Colors.orange, fontSize: 12)))]),
         const SizedBox(height:6),
-        Row(children: [Icon(Icons.notifications_rounded, size:18, color: hasNotif? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('Bildirim: indirme bitince haber verir', style: TextStyle(color: hasNotif? Colors.green: Colors.orange, fontSize: 12)))]),
+        Row(children: [Icon(Icons.notifications_rounded, size:18, color: hasNotif? Colors.green: Colors.orange), const SizedBox(width:6), Expanded(child: Text('notif_perm_full'.tr(), style: TextStyle(color: hasNotif? Colors.green: Colors.orange, fontSize: 12)))]),
         const SizedBox(height:10),
-        Text('İzinler ayarlardan her zaman değiştirilebilir. Kullanılmadığında ayarlardan kaldırmanız önerilir.', style: TextStyle(color: Colors.grey[600], fontSize:11)),
+        FutureBuilder<bool>(
+          future: SharedPreferences.getInstance().then((p)=> p.getBool('auto_revoke') ?? false),
+          builder: (c,snap){
+            final val = snap.data ?? false;
+            return SwitchListTile(
+              value: val,
+              title: Text('auto_revoke'.tr(), style: const TextStyle(fontSize:13, fontWeight: FontWeight.w700)),
+              subtitle: Text('auto_revoke_desc'.tr(), style: const TextStyle(fontSize:11)),
+              contentPadding: EdgeInsets.zero,
+              onChanged: (v) async { final p=await SharedPreferences.getInstance(); await p.setBool('auto_revoke', v); (c as Element).markNeedsBuild(); },
+            );
+          },
+        ),
+        Text('perm_hint'.tr(), style: TextStyle(color: Colors.grey[600], fontSize:11)),
       ])),
       actions: [
         TextButton(onPressed: () async { await prefs.setBool('first_launch_done', true); if(mounted) Navigator.pop(c); }, child: Text('Daha sonra'.tr())),
@@ -941,6 +954,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 (c as Element).markNeedsBuild(); 
               }, contentPadding: EdgeInsets.zero),
               SwitchListTile(value: autoFolder, title: Text('auto_folder'.tr()), subtitle: Text('auto_folder_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              SwitchListTile(value: p?.getBool('auto_revoke') ?? false, title: Text('auto_revoke'.tr()), subtitle: Text('auto_revoke_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_revoke', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
               const SizedBox(height: 8),
               Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), Text('default_format'.tr(), style: const TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); })]),
 

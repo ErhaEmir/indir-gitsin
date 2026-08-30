@@ -125,5 +125,9 @@
   "update_btn": "Update",
   "control_interval": "Check interval",
   "hour": "hour",
-  "version_label": "Version"
+  "version_label": "Version",
+  "auto_revoke": "Auto revoke permissions when unused",
+  "auto_revoke_desc": "Auto revoke if unused for 3 months",
+  "gallery_perm_full": "Gallery & Files: to save and play videos (full access recommended)",
+  "notif_perm_full": "Notification: notifies when download is complete"
 }

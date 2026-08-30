@@ -125,5 +125,9 @@
   "update_btn": "Güncelle",
   "control_interval": "Kontrol aralığı",
   "hour": "saat",
-  "version_label": "Sürüm"
+  "version_label": "Sürüm",
+  "auto_revoke": "Kullanılmadığında izinleri otomatik kaldır",
+  "auto_revoke_desc": "3 ay kullanılmazsa izinler otomatik sıfırlansın",
+  "gallery_perm_full": "Galeri & Dosyalar: videoları kaydetmek ve oynatmak için (tam erişim önerilir)",
+  "notif_perm_full": "Bildirim: indirme bitince haber verir"
 }
