@@ -758,9 +758,9 @@ class FilesTabState extends State<FilesTab> {
             else if(v=='share'){ await Share.shareXFiles([XFile(f.path)]); }
             else if(v=='rename') await _rename(f);
             else if(v=='delete') await _delete(f);
-          }, itemBuilder: (_)=> [const PopupMenuItem(value:'play', child: Text('play'.tr())), const PopupMenuItem(value:'share', child: Text('share'.tr())), const PopupMenuItem(value:'rename', child: Text('rename'.tr())), const PopupMenuItem(value:'delete', child: Text('Sil'))]),
+          }, itemBuilder: (_)=> [PopupMenuItem(value:'play', child: Text('play'.tr())), PopupMenuItem(value:'share', child: Text('share'.tr())), PopupMenuItem(value:'rename', child: Text('rename'.tr())), PopupMenuItem(value:'delete', child: Text('delete'.tr()))]),
           onTap: ()=> isVideo ? Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))) : OpenFilex.open(f.path),
-          onLongPress: ()=> showModalBottomSheet(context: context, builder: (_)=> Wrap(children: [ListTile(leading: const Icon(Icons.edit_rounded), title: Text('rename'.tr()), onTap: (){ Navigator.pop(context); _rename(f);}), ListTile(leading: const Icon(Icons.share_rounded), title: Text('share'.tr()), onTap: ()async{ Navigator.pop(context); await Share.shareXFiles([XFile(f.path)]);}), ListTile(leading: const Icon(Icons.delete_rounded, color: Colors.red), title: const Text('Sil', style: TextStyle(color: Colors.red)), onTap: (){ Navigator.pop(context); _delete(f);})])),
+          onLongPress: ()=> showModalBottomSheet(context: context, builder: (_)=> Wrap(children: [ListTile(leading: const Icon(Icons.edit_rounded), title: Text('rename'.tr()), onTap: (){ Navigator.pop(context); _rename(f);}), ListTile(leading: const Icon(Icons.share_rounded), title: Text('share'.tr()), onTap: ()async{ Navigator.pop(context); await Share.shareXFiles([XFile(f.path)]);}), ListTile(leading: const Icon(Icons.delete_rounded, color: Colors.red), title: Text('delete'.tr(), style: TextStyle(color: Colors.red)), onTap: (){ Navigator.pop(context); _delete(f);})])),
         );
       })),
     );
