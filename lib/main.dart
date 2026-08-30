@@ -874,7 +874,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
               DropdownButton<int>(
                 value: _interval,
                 underline: Container(height:1, color: Colors.grey[300]),
-                items: const [
+                items: [
                   DropdownMenuItem(value: 1, child: Text('1 ' + 'hour'.tr())),
                   DropdownMenuItem(value: 6, child: Text('6 ' + 'hour'.tr())),
                   DropdownMenuItem(value: 12, child: Text('12 ' + 'hour'.tr())),
