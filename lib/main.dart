@@ -997,7 +997,36 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     Switch(
                       value: isDev,
                       onChanged: (v) async {
+                        final prefs = await SharedPreferences.getInstance();
+                        final isLocked = prefs.getBool('dev_mode_locked') ?? false;
                         if (v) {
+                          // Eğer kilitliyse 2. PIN (1221) sor
+                          if (isLocked) {
+                            final pin2Ctrl = TextEditingController();
+                            final ok2 = await showDialog<bool>(
+                              context: context,
+                              builder: (d) => AlertDialog(
+                                title: const Text('2. PIN Gerekli'),
+                                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                                  const Text('Bir önceki PIN yanlış girildi. Devam etmek için 4 haneli 2. PIN\'i girin (1221)'),
+                                  const SizedBox(height: 12),
+                                  TextField(controller: pin2Ctrl, keyboardType: TextInputType.number, maxLength: 4, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
+                                ]),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
+                                  FilledButton(onPressed: () => Navigator.pop(d, pin2Ctrl.text == '1221'), child: const Text('Onayla')),
+                                ],
+                              ),
+                            );
+                            if (ok2 == true) {
+                              await prefs.setBool('dev_mode_locked', false);
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kilit açıldı, tekrar deneyin'), backgroundColor: Colors.green));
+                            } else {
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış 2. PIN'), backgroundColor: Colors.red));
+                            }
+                            return;
+                          }
+                          // Normal 1. PIN sor
                           final pinCtrl = TextEditingController();
                           final ok = await showDialog<bool>(
                             context: context,
@@ -1015,12 +1044,56 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             ),
                           );
                           if (ok == true) {
-                            final p = await SharedPreferences.getInstance();
-                            await p.setBool('dev_mode', true);
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geliştirici modu açıldı ✓'), backgroundColor: Colors.deepPurple));
+                            // Uyarı dialog'u (düzgün Türkçe)
+                            final approved = await showDialog<bool>(
+                              context: context,
+                              builder: (d) => AlertDialog(
+                                title: Row(children: [const Icon(Icons.warning_rounded, color: Colors.red), const SizedBox(width:8), const Text('Dikkat!')]),
+                                content: SingleChildScrollView(child: Text(
+                                  'Bu mod sadece test amaçlı kullanılmalıdır.\n\n'
+                                  'Uygulamaya veya telefonunuza geri dönülemez zarar verebilir. Olası hasar veya yazılımsal olarak ortaya çıkabilecek hiçbir hatanın sorumluluğu bize ait değildir.\n\n'
+                                  '• Yapılan işlemler geri alınamaz, veriler silinebilir\n'
+                                  '• Cihazınızda kararsızlık veya veri kaybı oluşabilir\n'
+                                  '• Lütfen dikkatli kullanın ve bilmediğiniz ayarları değiştirmeyin',
+                                  style: TextStyle(color: Colors.grey[800], height: 1.4),
+                                )),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
+                                  FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('ONAYLIYORUM'), style: FilledButton.styleFrom(backgroundColor: Colors.red)),
+                                ],
+                              ),
+                            );
+                            if (approved != true) return;
+                            // Kırmızı bildirim (siyah yazı)
+                            try {
+                              const androidDetails = AndroidNotificationDetails(
+                                'dev_mode_channel',
+                                'Geliştirici Modu',
+                                channelDescription: 'Geliştirici modu uyarısı',
+                                importance: Importance.high,
+                                priority: Priority.high,
+                                color: Color(0xFFFF0000),
+                                icon: '@mipmap/launcher_icon',
+                              );
+                              await NotificationService.showCustom(
+                                title: 'DİKKAT: _GELİŞTİRİCİ_TEST_MODU:TRUE',
+                                body: 'Geliştirici modu aktif',
+                                color: Colors.red,
+                              );
+                              // Alternatif: SnackBar ile de göster
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('DİKKAT: _GELİŞTİRİCİ_TEST_MODU:TRUE', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)), backgroundColor: Colors.red, duration: Duration(seconds: 4)));
+                              }
+                            } catch (_) {}
+                            // Onaylandıysa mod aktif ve bildirim
+                            await prefs.setBool('dev_mode', true);
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ayarlar kaydedildi ✓'), backgroundColor: Colors.green));
+                            try { await NotificationService.showDownloadDone('Ayarlar kaydedildi', 'Geliştirici modu aktif'); } catch(_){}
                             (c as Element).markNeedsBuild();
                           } else {
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red));
+                            // Yanlış PIN -> kilitle
+                            await prefs.setBool('dev_mode_locked', true);
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN - Bir sonraki güncellemeye, silip yeniden yükleyene veya 2. PIN (1221) girilene kadar açılamaz'), backgroundColor: Colors.red, duration: Duration(seconds: 5)));
                           }
                         } else {
                           final p = await SharedPreferences.getInstance();

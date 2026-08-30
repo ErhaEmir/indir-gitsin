@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:open_filex/open_filex.dart';
 
@@ -31,5 +32,18 @@ class NotificationService {
   static Future<void> showUpdate(String version) async {
     const androidDetails = AndroidNotificationDetails('update_channel', 'Güncellemeler', importance: Importance.high, priority: Priority.high, icon: '@mipmap/launcher_icon');
     await _plugin.show(1, 'Güncelleme hazır', 'İndir Gitsin $version indirildi, kurmak için dokun', const NotificationDetails(android: androidDetails));
+  }
+
+  static Future<void> showCustom({required String title, required String body, Color? color}) async {
+    final androidDetails = AndroidNotificationDetails(
+      'dev_mode_channel',
+      'Geliştirici Modu',
+      channelDescription: 'Geliştirici modu uyarısı',
+      importance: Importance.high,
+      priority: Priority.high,
+      color: color ?? const Color(0xFFFF0000),
+      icon: '@mipmap/launcher_icon',
+    );
+    await _plugin.show(2, title, body, NotificationDetails(android: androidDetails));
   }
 }
