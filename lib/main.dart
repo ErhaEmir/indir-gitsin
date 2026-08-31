@@ -152,6 +152,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         ));
       }
     });
+    _updateStreak();
+    _autoCleanupIfNeeded();
     // Periyodik kontrol - 5 dkda bir bak (anında modu için), aralık ayarı içinde kontrol edilir
     Timer.periodic(const Duration(minutes: 5), (_) async {
       final prefs = await SharedPreferences.getInstance();
@@ -248,6 +250,39 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         TextButton(onPressed: () async { await prefs.setBool('notif_asked', true); await openAppSettings(); }, child: const Text('Ayarları aç')),
       ],
     ));
+  }
+
+  Future<void> _updateStreak() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final last = p.getString('last_streak_date') ?? '';
+      final today = DateTime.now().toIso8601String().substring(0,10);
+      if (last == today) return;
+      final yesterday = DateTime.now().subtract(const Duration(days:1)).toIso8601String().substring(0,10);
+      int streak = p.getInt('streak_count') ?? 0;
+      if (last == yesterday) streak += 1; else if (last.isEmpty) streak = 1; else streak = 1;
+      await p.setString('last_streak_date', today);
+      await p.setInt('streak_count', streak);
+    } catch(_){}
+  }
+
+  Future<void> _autoCleanupIfNeeded() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      if (!(p.getBool('auto_cleanup') ?? false)) return;
+      final dirs = await DownloadService().getAllDownloadDirs();
+      final cutoff = DateTime.now().subtract(const Duration(days:30));
+      for (final d in dirs) {
+        if (!await d.exists()) continue;
+        final files = await d.list(recursive: true).where((e)=> e is File).toList();
+        for (final f in files) {
+          try {
+            final stat = await (f as File).stat();
+            if (stat.modified.isBefore(cutoff)) await f.delete();
+          } catch(_){}
+        }
+      }
+    } catch(_){}
   }
 
   @override
@@ -995,6 +1030,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {}
   }
+  Widget _statBox(IconData icon, String value, String label, Color color) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
+    child: Column(children: [
+      Icon(icon, color: color, size: 20),
+      const SizedBox(height: 6),
+      Text(value, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: color)),
+      Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600]), textAlign: TextAlign.center),
+    ]),
+  );
   @override Widget build(BuildContext context){
     final mode = ref.watch(themeModeProvider);
     final cs = Theme.of(context).colorScheme;
@@ -1107,6 +1152,47 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 // Hive box'ları dinleyen sayfalar otomatik yenilenecek (ValueListenableBuilder)
                 if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tümü temizlendi ✓'), behavior: SnackBarBehavior.floating, backgroundColor: Colors.green));
               }, icon: const Icon(Icons.delete_sweep_rounded), label: Text('clear_all'.tr()))),
+            ]);
+          }),
+        ]))),
+        const SizedBox(height: 12),
+        // İstatistiklerim — kitleyi çekmek için sosyal kanıt
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blue.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bar_chart_rounded, color: Colors.blue)), const SizedBox(width: 10), Text('stats_title'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), const Spacer(), FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){ final streak = s.data?.getInt('streak_count') ?? 0; return Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(99)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14), const SizedBox(width: 4), Text('${'streak_days'.tr(namedArgs: {'count':'$streak'})}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))])); })]),
+          const SizedBox(height: 4),
+          Text('stats_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 12),
+          FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
+            final histCount = StorageService.history.length;
+            final favCount = StorageService.fav.length;
+            final streak = s.data?.getInt('streak_count') ?? 0;
+            return Row(children: [
+              Expanded(child: _statBox(Icons.download_rounded, '$histCount', 'total_downloads'.tr(), Colors.red)),
+              const SizedBox(width: 8),
+              Expanded(child: _statBox(Icons.favorite_rounded, '$favCount', 'total_favorites'.tr(), Colors.pink)),
+              const SizedBox(width: 8),
+              Expanded(child: _statBox(Icons.local_fire_department_rounded, '$streak', 'streak_title'.tr(), Colors.orange)),
+            ]);
+          }),
+          const SizedBox(height: 8),
+          Text('keep_exploring'.tr(), style: TextStyle(color: Colors.grey[500], fontSize: 11, fontStyle: FontStyle.italic), textAlign: TextAlign.center),
+        ]))),
+        const SizedBox(height: 12),
+        // Ekstra Özellikler — kitle çekici
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.teal.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.auto_awesome_rounded, color: Colors.teal)), const SizedBox(width: 10), Text('extra_features'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
+          const SizedBox(height: 8),
+          FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
+            final p=s.data;
+            final wifiOnly = p?.getBool('wifi_only') ?? false;
+            final keepOn = p?.getBool('keep_screen_on') ?? false;
+            final autoClean = p?.getBool('auto_cleanup') ?? false;
+            final fastDl = p?.getBool('fast_download') ?? true;
+            return Column(children: [
+              SwitchListTile(value: wifiOnly, title: Text('wifi_only'.tr(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), subtitle: Text('wifi_only_desc'.tr(), style: const TextStyle(fontSize: 11)), contentPadding: EdgeInsets.zero, onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('wifi_only', v); (c as Element).markNeedsBuild(); }),
+              SwitchListTile(value: keepOn, title: Text('keep_screen_on'.tr(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), subtitle: Text('keep_screen_on_desc'.tr(), style: const TextStyle(fontSize: 11)), contentPadding: EdgeInsets.zero, onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('keep_screen_on', v); (c as Element).markNeedsBuild(); }),
+              SwitchListTile(value: autoClean, title: Text('auto_cleanup'.tr(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), subtitle: Text('auto_cleanup_desc'.tr(), style: const TextStyle(fontSize: 11)), contentPadding: EdgeInsets.zero, onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_cleanup', v); (c as Element).markNeedsBuild(); }),
+              SwitchListTile(value: fastDl, title: Text('fast_download'.tr(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), subtitle: Text('fast_download_desc'.tr(), style: const TextStyle(fontSize: 11)), contentPadding: EdgeInsets.zero, onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('fast_download', v); (c as Element).markNeedsBuild(); }),
             ]);
           }),
         ]))),

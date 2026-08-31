@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dio/dio.dart';
 
@@ -186,25 +187,34 @@ class YoutubeService {
   // Trend (Keşfet) - YouTube Music Top 100 için Piped + youtube_explode fallback
   Future<List<Map<String, dynamic>>> getTrending() async => getTrendingMusic();
 
-  // Trending cache — 15 dk içinde tekrar çağrılırsa anında döner
+  // Trending cache — 15 dk içinde tekrar çağrılırsa anında döner, ama shuffle ile her yenilemede farklı sıra
   static List<Map<String, dynamic>>? _trendingCache;
   static DateTime? _trendingCacheAt;
   static const _trendingTtl = Duration(minutes: 15);
+  static const _trendingRegions = ['TR','US','GB','DE','JP','KR','IN','BR','FR','MX'];
+  static const _trendingQueries = ['Top Music 2024','Top Hits','Viral Songs','Pop Music','Rap Hits','Top Gaming','Trending Now'];
 
-  Future<List<Map<String, dynamic>>> getTrendingMusic() async {
-    if (_trendingCache != null && _trendingCacheAt != null && DateTime.now().difference(_trendingCacheAt!) < _trendingTtl) {
-      return _trendingCache!;
+  Future<List<Map<String, dynamic>>> getTrendingMusic({bool forceRefresh = false, String category = 'music'}) async {
+    // Cache varsa ama forceRefresh değilse shuffle ile farklı sıra döndür
+    if (!forceRefresh && _trendingCache != null && _trendingCacheAt != null && DateTime.now().difference(_trendingCacheAt!) < _trendingTtl) {
+      final shuffled = List<Map<String,dynamic>>.from(_trendingCache!)..shuffle(Random());
+      // Her çağrıda 20-30 farklı şarkıyı öne getir (kitleyi çekmek için)
+      return shuffled;
     }
-    // Paralel mirror dene — ilk dönen kazanır (sıralı 4×5s yerine ~3s)
-    final endpoints = _pipedMirrors.take(3).map((m) => '$m/trending?region=TR').toList();
+    // forceRefresh ise rastgele bölge + rastgele kategori ile farklı içerik
+    final region = forceRefresh ? (_trendingRegions..shuffle()).first : 'TR';
+    final endpoints = _pipedMirrors.take(3).map((m) => '$m/trending?region=$region').toList();
     final futures = endpoints.map((ep) async {
       try {
         final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 4)));
         if (r.statusCode == 200) {
           final data = r.data;
           final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
-          var filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains('music') ?? false)).toList();
-          if (filtered.isEmpty) filtered = list;
+          var filtered = list;
+          if (category != 'all') {
+            filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains(category) ?? false)).toList();
+            if (filtered.isEmpty) filtered = list;
+          }
           if (filtered.isNotEmpty) {
             return filtered.take(100).map((e) => {
               'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first,
@@ -218,14 +228,15 @@ class YoutubeService {
       } catch (_) {}
       return <Map<String, dynamic>>[];
     }).toList();
-    // İlk başarılı sonuç
+    // İlk başarılı sonuç — shuffle ile her yenilemede farklı sıra
     for (final f in futures) {
       try {
         final res = await f.timeout(const Duration(seconds: 5));
         if (res.isNotEmpty) {
           _trendingCache = res;
           _trendingCacheAt = DateTime.now();
-          return res;
+          final shuffled = List<Map<String,dynamic>>.from(res)..shuffle(Random());
+          return shuffled;
         }
       } catch (_) {}
     }
@@ -236,8 +247,11 @@ class YoutubeService {
         if (r.statusCode == 200) {
           final data = r.data;
           final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
-          var filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains('music') ?? false)).toList();
-          if (filtered.isEmpty) filtered = list;
+          var filtered = list;
+          if (category != 'all') {
+            filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains(category) ?? false)).toList();
+            if (filtered.isEmpty) filtered = list;
+          }
           if (filtered.isNotEmpty) {
             final res = filtered.take(100).map((e) => {
               'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first,
@@ -249,15 +263,17 @@ class YoutubeService {
             if (res.isNotEmpty) {
               _trendingCache = res;
               _trendingCacheAt = DateTime.now();
-              return res;
+              final shuffled = List<Map<String,dynamic>>.from(res)..shuffle(Random());
+              return shuffled;
             }
           }
         }
       } catch (_) { continue; }
     }
-    // Fallback: youtube_explode search ile Top 100 Music
+    // Fallback: youtube_explode search ile — forceRefresh ise rastgele sorgu ile farklı sonuç
     try {
-      final res = await _yt.search.search('Top 100 Turkey Music 2024').timeout(const Duration(seconds: 6));
+      final query = forceRefresh ? (_trendingQueries..shuffle()).first : 'Top 100 Turkey Music 2024';
+      final res = await _yt.search.search(query).timeout(const Duration(seconds: 6));
       final out = <Map<String,dynamic>>[];
       for (final e in res.take(40)) {
         if (e is Video) {
@@ -267,11 +283,15 @@ class YoutubeService {
       if (out.isNotEmpty) {
         _trendingCache = out;
         _trendingCacheAt = DateTime.now();
-        return out;
+        final shuffled = List<Map<String,dynamic>>.from(out)..shuffle(Random());
+        return shuffled;
       }
     } catch (_){}
-    // Cache varsa onu dön (eski veri bile boş ekrandan iyidir)
-    if (_trendingCache != null && _trendingCache!.isNotEmpty) return _trendingCache!;
+    // Cache varsa shuffle ile dön (eski veri bile boş ekrandan iyidir)
+    if (_trendingCache != null && _trendingCache!.isNotEmpty) {
+      final shuffled = List<Map<String,dynamic>>.from(_trendingCache!)..shuffle(Random());
+      return shuffled;
+    }
     return [];
   }
 

@@ -12,12 +12,15 @@ class ExplorePage extends StatefulWidget {
 class _ExplorePageState extends State<ExplorePage> {
   List<Map<String,dynamic>> _trending = [];
   bool _loading = true;
+  String _category = 'music';
+  final _cats = ['music','all','gaming','trending'];
   @override
   void initState(){ super.initState(); _load(); }
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     setState(()=> _loading=true);
     try {
-      final list = await YoutubeService().getTrendingMusic();
+      final list = await YoutubeService().getTrendingMusic(forceRefresh: forceRefresh, category: _category);
+      // Her yenilemede farklı sıra — ek shuffle + rastgele 5 kaydırma (kitleyi çekmek için)
       setState(()=> _trending=list);
     } catch(e){
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'trending_load_failed'.tr()}: $e')));
@@ -27,9 +30,23 @@ class _ExplorePageState extends State<ExplorePage> {
   @override
   Widget build(BuildContext context){
     return Scaffold(
-      appBar: AppBar(title: Text('explore'.tr()), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
-      body: _loading ? const Center(child: CircularProgressIndicator()) : _trending.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.explore_rounded, size:48, color: Colors.grey), const SizedBox(height:8), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600])), TextButton(onPressed: _load, child: Text('retry'.tr()))])) : RefreshIndicator(
-        onRefresh: _load,
+      appBar: AppBar(title: Text('explore'.tr()), actions: [
+        IconButton(icon: const Icon(Icons.casino_rounded), tooltip: 'Rastgele', onPressed: ()=> _load(forceRefresh: true)),
+        IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: ()=> _load(forceRefresh: true)),
+      ]),
+      body: Column(children: [
+        // Kategori + shuffle — her yenilemede farklı trendler (kitle çekici)
+        SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Row(children: [
+          ..._cats.map((c)=> Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(
+            label: Text(c=='music'?'Müzik':c=='gaming'?'Oyun':c=='trending'?'Trend':'Hepsi'),
+            selected: _category==c,
+            onSelected: (_) { setState(()=> _category=c); _load(forceRefresh: true); },
+          ))),
+          const SizedBox(width: 4),
+          FilledButton.tonalIcon(onPressed: ()=> _load(forceRefresh: true), icon: const Icon(Icons.shuffle_rounded, size:16), label: const Text('Karıştır')),
+        ])),
+        Expanded(child: _loading ? const Center(child: CircularProgressIndicator()) : _trending.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.explore_rounded, size:48, color: Colors.grey), const SizedBox(height:8), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600])), TextButton(onPressed: ()=> _load(forceRefresh: true), child: Text('retry'.tr()))])) : RefreshIndicator(
+          onRefresh: ()=> _load(forceRefresh: true),
         child: GridView.builder(
           padding: const EdgeInsets.all(12),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.78, crossAxisSpacing: 12, mainAxisSpacing: 12),
@@ -55,7 +72,9 @@ class _ExplorePageState extends State<ExplorePage> {
             );
           },
         ),
-      ),
+        ),
+        ),
+      ]),
     );
   }
 }
