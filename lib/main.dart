@@ -497,11 +497,13 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     if (_video == null || _selected == null) return;
     HapticFeedback.mediumImpact();
     setState(() { _downloading = true; _progress = 0; _error = null; });
+    // ext catch bloğunda da lazım olduğu için try dışında tanımla
+    final extRaw = _selected!.container == 'mp4' ? 'mp4' : _selected!.container;
+    final ext = _selected!.type == 'audioOnly' ? 'm4a' : extRaw;
     try {
       final svc = ref.read(downloadServiceProvider);
-      final ext = _selected!.container == 'mp4' ? 'mp4' : _selected!.container;
       final path = await svc.download(
-        url: _selected!.url, fileName: _video!.title, ext: _selected!.type == 'audioOnly' ? 'm4a' : ext,
+        url: _selected!.url, fileName: _video!.title, ext: ext,
         videoId: _video!.id, streamTag: _selected!.tag,
         onProgress: (rx, total) { if (total > 0 && mounted) setState(() => _progress = rx / total); },
       );
