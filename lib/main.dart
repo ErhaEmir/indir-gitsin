@@ -182,11 +182,21 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     final done = prefs.getBool('first_launch_done') ?? false;
     final hasStorage = await _hasStoragePermission();
     final hasNotif = await Permission.notification.isGranted;
-    // Her açılışta denetle, eksikse tekrar göster
-    if (done && hasStorage && hasNotif) return;
+    // Sadece ilk kurulumda veya her ikisi de eksikse göster — her açılışta zorla değil
+    if (done) {
+      // storage yoksa bile app-scoped dizine yazabildiğimiz için sadece bildirim eksikse ve daha önce sorulmadıysa göster
+      if (hasStorage && hasNotif) return;
+      // kullanıcı "Daha sonra" dediyse tekrar rahatsız etme (done=true ise sessiz)
+      if (!hasStorage && hasNotif) return; // scoped storage ile çalışır
+      if (hasStorage && !hasNotif) {
+        // bildirim izni opsiyonel — sadece ilk kez sor
+        final asked = prefs.getBool('notif_asked') ?? false;
+        if (asked) return;
+      }
+    }
     if (!mounted) return;
     final isFirst = !done;
-    await showDialog(context: context, barrierDismissible: false, builder: (c)=> AlertDialog(
+    await showDialog(context: context, barrierDismissible: true, builder: (c)=> AlertDialog(
       title: Row(children: [Icon(Icons.verified_user_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text(isFirst ? 'Hoş geldin!'.tr() : 'İzinler gerekli')]),
       content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(isFirst ? 'İndir Gitsin güvenle çalışmak için izinlere ihtiyaç duyar.'.tr() : 'Bazı izinler eksik, uygulama düzgün çalışmayabilir.', style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -214,6 +224,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         TextButton(onPressed: () async { await prefs.setBool('first_launch_done', true); if(mounted) Navigator.pop(c); }, child: Text('Daha sonra'.tr())),
         FilledButton(onPressed: () async {
           await prefs.setBool('first_launch_done', true);
+          await prefs.setBool('notif_asked', true);
           try {
             if (Platform.isAndroid) {
               final info = await DeviceInfoPlugin().androidInfo;
@@ -223,7 +234,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                 await Permission.audio.request();
               } else {
                 await Permission.storage.request();
-                await Permission.manageExternalStorage.request();
+                // MANAGE_EXTERNAL_STORAGE sadece kullanıcı FilesTab'da özel klasör seçerse istenecek — ilk kurulumda sorma (Play Store reddi)
               }
             }
             await Permission.notification.request();
@@ -232,9 +243,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           if(mounted) Navigator.pop(c);
           final okStorage = await _hasStoragePermission();
           final okNotif = await Permission.notification.isGranted;
-          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okStorage && okNotif ? 'İzinler kaydedildi'.tr() : 'Bazı izinler verilmedi, ayarlardan açabilirsin')));
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okStorage || okNotif ? 'İzinler kaydedildi'.tr() : 'İzinler ayarlardan her zaman değiştirilebilir')));
         }, child: Text('İzin ver'.tr())),
-        TextButton(onPressed: () async { await openAppSettings(); }, child: const Text('Ayarları aç')),
+        TextButton(onPressed: () async { await prefs.setBool('notif_asked', true); await openAppSettings(); }, child: const Text('Ayarları aç')),
       ],
     ));
   }
@@ -383,11 +394,24 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       setState(() { _video = info; _selected = info.streams.isNotEmpty ? info.streams.first : null; });
       HapticFeedback.selectionClick();
     } on TimeoutException {
-      setState(() => _error = 'timeout'.tr());
+      setState(() => _error = 'Bağlantı yavaş — tekrar dene (sunucu yoğun olabilir)');
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
       final isDev = prefs.getBool('dev_mode') ?? false;
-      final msg = isDev ? '${'failed'.tr()}: $e' : 'İşlem gerçekleştirilemedi';
+      final raw = e.toString();
+      String msg;
+      if (isDev) {
+        msg = '${'failed'.tr()}: $raw';
+      } else {
+        if (raw.contains('VideoUnavailable') || raw.contains('Video bulunamadı')) msg = 'Video bulunamadı veya gizli — gizlilik ayarını Herkese Açık yapıp tekrar dene';
+        else if (raw.contains('lisans') || raw.contains('Lisans') || raw.contains('copyright')) msg = 'Bu video lisans korumalı olabilir — MP4 ile tekrar dene veya farklı video dene';
+        else if (raw.contains('Requires login') || raw.contains('giriş gerektiriyor')) msg = 'Bu video giriş gerektiriyor — herkese açık bir link dene';
+        else if (raw.contains('403')) msg = 'YouTube erişimi geçici olarak reddedildi (403) — MP4 dene veya 1 dk sonra tekrar dene';
+        else if (raw.contains('404')) msg = 'Video veya format bulunamadı (404) — farklı kalite seçmeyi dene';
+        else if (raw.contains('Timeout') || raw.contains('Socket')) msg = 'Bağlantı zaman aşımı — internetini kontrol et ve tekrar dene';
+        else if (raw.contains('Geçersiz YouTube linki')) msg = 'Geçersiz YouTube linki — youtu.be / youtube.com / music.youtube.com linki kullan';
+        else msg = 'Video bilgisi alınamadı — interneti kontrol et ve tekrar dene';
+      }
       setState(() => _error = msg);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -401,6 +425,9 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     try {
       final res = await ref.read(youtubeServiceProvider).search(q).timeout(const Duration(seconds: 10));
       setState(() { _searchResults = res; });
+      if (res.isEmpty && mounted) setState(() => _error = 'Sonuç bulunamadı — farklı kelime dene');
+    } on TimeoutException {
+      setState(() => _error = 'Arama zaman aşımı — tekrar dene');
     } catch (e) { setState(() => _error = 'Arama hatası: $e'); }
     finally { setState(() => _searching = false); }
   }
@@ -410,8 +437,10 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     try {
       final list = await ref.read(youtubeServiceProvider).getPlaylistVideos(url).timeout(const Duration(seconds: 15));
       setState(() { _playlist = list; });
+      if (list.isEmpty) { setState(() => _error = 'Playlist boş veya alınamadı — herkese açık playlist dene'); return; }
       if (list.isNotEmpty) { _linkCtrl.text = 'https://www.youtube.com/watch?v=${list.first.id}'; await _fetch(); }
-    } catch (e) { setState(() => _error = 'Playlist alınamadı: $e'); }
+    } on TimeoutException { setState(() => _error = 'Playlist zaman aşımı — tekrar dene'); }
+    catch (e) { setState(() => _error = 'Playlist alınamadı: $e'); }
     finally { setState(() => _loading = false); }
   }
 
@@ -491,15 +520,26 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       final raw = e.toString();
       String friendly;
       if (isDev) {
-        friendly = raw; // dev modda teknik detay göster (404 dahil)
+        friendly = raw;
       } else {
-        if (raw.contains('lisans') || raw.contains('Lisans')) friendly = 'İşlem gerçekleştirilemedi';
-        else if (raw.contains('403') || raw.contains('404')) friendly = 'İşlem gerçekleştirilemedi';
-        else if (raw.contains('Timeout') || raw.contains('Socket')) friendly = 'İşlem gerçekleştirilemedi';
-        else friendly = 'İşlem gerçekleştirilemedi';
+        if (raw.contains('lisans') || raw.contains('Lisans')) friendly = 'Lisans korumalı — MP4 ile tekrar dene veya farklı video dene';
+        else if (raw.contains('403')) {
+          if (ext == 'mp3' || ext == 'm4a') friendly = 'MP3 koruması (403) — MP4 veya M4A dene, olmazsa farklı video dene';
+          else if (ext == 'webm') friendly = 'WEBM kısıtlı (403) — MP4 dene';
+          else friendly = 'İndirme reddedildi (403) — MP4 ile tekrar dene';
+        }
+        else if (raw.contains('404')) friendly = 'Format bulunamadı (404) — farklı kalite seç';
+        else if (raw.contains('Depolama izni')) friendly = 'Depolama izni verilmedi — Ayarlar > İzin ver';
+        else if (raw.contains('çok küçük') || raw.contains('küçük')) friendly = 'İndirilen dosya bozuk — tekrar dene, MP4 önerilir';
+        else if (raw.contains('Timeout') || raw.contains('Socket') || raw.contains('zaman aşımı')) friendly = 'Bağlantı zaman aşımı — interneti kontrol et ve tekrar dene';
+        else if (raw.contains('alan') || raw.contains('space')) friendly = 'Depolama alanı yetersiz — yer aç ve tekrar dene';
+        else friendly = 'İndirme başarısız — MP4 ile tekrar dene';
       }
       setState(() { _downloading = false; _error = friendly; });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendly), backgroundColor: Theme.of(context).colorScheme.error, behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 5), action: SnackBarAction(label: 'Anladım', textColor: Colors.white, onPressed: (){})));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(friendly), backgroundColor: Theme.of(context).colorScheme.error, behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 6),
+        action: SnackBarAction(label: 'Tekrar', textColor: Colors.white, onPressed: _download),
+      ));
     }
   }
 
@@ -744,27 +784,37 @@ class FilesTabState extends State<FilesTab> {
     final prefs = await SharedPreferences.getInstance();
     final custom = prefs.getString('custom_download_path');
     if (custom != null && custom.isNotEmpty) return Directory(custom);
+    // DownloadService ile aynı mantık — ilk yazılabilir aday
+    try {
+      final svc = DownloadService();
+      final p = await svc.getDownloadPath();
+      return Directory(p);
+    } catch (_) {}
     return Directory('/storage/emulated/0/Download/IndirGitsin');
   }
   Future<void> _load() async {
     try {
-      final base = Directory('/storage/emulated/0/Download/IndirGitsin');
       List<FileSystemEntity> all = [];
-      if (await base.exists()) {
-        final baseFiles = await base.list(recursive: true).where((e)=> e is File).toList();
-        all.addAll(baseFiles);
-      }
+      final seenPaths = <String>{};
+      // Tüm aday klasörleri tara (DownloadService.getAllDownloadDirs mantığı)
+      final candidates = <String>[
+        '/storage/emulated/0/Download/IndirGitsin',
+        '/storage/emulated/0/Downloads/IndirGitsin',
+      ];
       final custom = await _getDir();
-      if (custom.path != base.path && await custom.exists()) {
-        final customFiles = await custom.list(recursive: true).where((e)=> e is File).toList();
-        for(final f in customFiles){ if(!all.any((e)=> e.path==f.path)) all.add(f); }
-      }
-      // Eğer hiç yoksa custom'ı da dene (eski dosyalar base'de olabilir)
-      if (all.isEmpty) {
-        final dir = await _getDir();
+      if (!candidates.contains(custom.path)) candidates.add(custom.path);
+      // DownloadService fallback'lerini de ekle
+      try {
+        final svc = DownloadService();
+        for (final d in await svc.getAllDownloadDirs()) {
+          if (!candidates.contains(d.path)) candidates.add(d.path);
+        }
+      } catch (_) {}
+      for (final pth in candidates) {
+        final dir = Directory(pth);
         if (await dir.exists()) {
-          final f = await dir.list(recursive: true).where((e)=> e is File).toList();
-          all = f;
+          final files = await dir.list(recursive: true).where((e)=> e is File).toList();
+          for (final f in files) { if (seenPaths.add(f.path)) all.add(f); }
         }
       }
       all.sort((a,b){
@@ -780,7 +830,22 @@ class FilesTabState extends State<FilesTab> {
   Future<void> _rename(File f) async {
     final ctrl = TextEditingController(text: f.path.split('/').last);
     final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('Yeniden adlandır'), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
-    if (ok==true && ctrl.text.isNotEmpty) { final dir = (await _getDir()).path; await f.rename('$dir/${ctrl.text}'); _load(); }
+    if (ok==true && ctrl.text.isNotEmpty) {
+      try {
+        final dir = f.parent.path; // aynı klasörde yeniden adlandır
+        final newPath = '$dir/${ctrl.text}';
+        // uzantı kaybolduysa eskiyi ekle
+        if (!newPath.contains('.')) {
+          final ext = f.path.split('.').last;
+          await f.rename('$newPath.$ext');
+        } else {
+          await f.rename(newPath);
+        }
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Yeniden adlandırma hatası: $e')));
+      }
+    }
   }
   Future<void> _delete(File f) async {
     final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('delete_confirm'.tr()), content: Text(f.path.split('/').last), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('delete'.tr()))]));
@@ -788,8 +853,21 @@ class FilesTabState extends State<FilesTab> {
   }
   Future<void> _pickStorage() async {
     final ctrl = TextEditingController(text: (await _getDir()).path);
-    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('choose_storage'.tr()), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: ctrl, decoration: const InputDecoration(hintText: '/storage/emulated/0/Download/IndirGitsin')), const SizedBox(height:8), Text('storage_desc'.tr(), style: TextStyle(fontSize:11, color: Colors.grey))]), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
-    if (ok==true) { final p=await SharedPreferences.getInstance(); await p.setString('custom_download_path', ctrl.text.trim()); _load(); }
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('choose_storage'.tr()), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: ctrl, decoration: const InputDecoration(hintText: '/storage/emulated/0/Download/IndirGitsin')), const SizedBox(height:8), Text('storage_desc'.tr(), style: TextStyle(fontSize:11, color: Colors.grey)), const SizedBox(height:6), Text('Özel klasör seçersen Android 11+ için Tüm dosyalar izni istenebilir', style: TextStyle(fontSize:11, color: Colors.orange))]), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
+    if (ok==true) {
+      final newPath = ctrl.text.trim();
+      // Custom path harici Download ise MANAGE_EXTERNAL_STORAGE iste
+      if (Platform.isAndroid && newPath != '/storage/emulated/0/Download/IndirGitsin' && newPath.isNotEmpty) {
+        try {
+          final info = await DeviceInfoPlugin().androidInfo;
+          if (info.version.sdkInt >= 30) {
+            final st = await Permission.manageExternalStorage.status;
+            if (!st.isGranted) await Permission.manageExternalStorage.request();
+          }
+        } catch (_) {}
+      }
+      final p=await SharedPreferences.getInstance(); await p.setString('custom_download_path', newPath); _load();
+    }
   }
   @override Widget build(BuildContext context){
     return Scaffold(
@@ -802,14 +880,14 @@ class FilesTabState extends State<FilesTab> {
           PopupMenuItem(value:'storage', child: Row(children: [const Icon(Icons.folder_open_rounded, size:16), const SizedBox(width:8), Text('choose_storage'.tr())])),
         ]),
       ]),
-      body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), TextButton(onPressed: _load, child: const Text('Yenile'))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
-        final f = _files[i] as File; final name = f.path.split('/').last; final isVideo = name.endsWith('.mp4') || name.endsWith('.mkv');
+      body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), Text('İndirilenler /Download/IndirGitsin veya seçili klasörde görünür', style: TextStyle(fontSize:11, color: Colors.grey[600])), TextButton(onPressed: _load, child: const Text('Yenile'))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
+        final f = _files[i] as File; final name = f.path.split('/').last; final ext = name.split('.').last.toLowerCase(); final isVideo = ['mp4','mkv','webm','avi','mov'].contains(ext); final isAudio = ['mp3','m4a','opus','aac','wav'].contains(ext);
         return ListTile(
-          leading: Icon(isVideo? Icons.videocam_rounded: Icons.music_note_rounded, color: Theme.of(context).colorScheme.primary),
+          leading: Icon(isVideo ? Icons.videocam_rounded : (isAudio ? Icons.music_note_rounded : Icons.insert_drive_file_rounded), color: Theme.of(context).colorScheme.primary),
           title: Text(name, maxLines:1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('${(f.lengthSync()/1024/1024).toStringAsFixed(1)} MB • ${f.statSync().modified.toString().substring(0,16)}'),
+          subtitle: Text('${(f.lengthSync()/1024/1024).toStringAsFixed(1)} MB • ${f.statSync().modified.toString().substring(0,16)} • ${ext.toUpperCase()}'),
           trailing: PopupMenuButton<String>(onSelected: (v) async {
-            if(v=='play'){ if(isVideo) Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))); else OpenFilex.open(f.path); }
+            if(v=='play'){ if(isVideo) Navigator.push(context, MaterialPageRoute(builder: (_)=> PlayerPage(path: f.path, title: name))); else await OpenFilex.open(f.path); }
             else if(v=='share'){ await Share.shareXFiles([XFile(f.path)]); }
             else if(v=='rename') await _rename(f);
             else if(v=='delete') await _delete(f);
@@ -845,6 +923,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   int _interval = 6;
   bool _checking = false;
   String? _status;
+  // PIN doğrulama — düz metin yerine hash karşılaştırma (basit obscure, reverse engel)
+  bool _verifyPin(String input, int which) {
+    int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
+    if (which == 1) return h == 8922; // 192168 obscure
+    if (which == 2) return h == 509409; // 1221 obscure
+    return false;
+  }
   @override void initState(){ super.initState(); _load(); }
   Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = p.getInt('update_interval_hours') ?? 6 }); }
   Future<void> _toggleAuto(bool v) async { setState(()=> _autoUpdate=v); final p=await SharedPreferences.getInstance(); await p.setBool('auto_update_enabled', v); }
@@ -981,7 +1066,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           }),
         ]))),
         const SizedBox(height: 12),
-        // Geliştirici Test Modu (PIN 192168) - Hakkında üstünde, normalde kapalı
+        // Geliştirici Test Modu - Hakkında üstünde, normalde kapalı
         Card(
           color: Colors.deepPurple.withOpacity(0.06),
           child: Padding(
@@ -1009,13 +1094,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               builder: (d) => AlertDialog(
                                 title: const Text('2. PIN Gerekli'),
                                 content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                  const Text('Bir önceki PIN yanlış girildi. Devam etmek için 4 haneli 2. PIN\'i girin (1221)'),
+                                  const Text('Bir önceki PIN yanlış girildi. Devam etmek için 4 haneli 2. PIN\'i girin'),
                                   const SizedBox(height: 12),
                                   TextField(controller: pin2Ctrl, keyboardType: TextInputType.number, maxLength: 4, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                                 ]),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
-                                  FilledButton(onPressed: () => Navigator.pop(d, pin2Ctrl.text == '1221'), child: const Text('Onayla')),
+                                  FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pin2Ctrl.text, 2)), child: const Text('Onayla')),
                                 ],
                               ),
                             );
@@ -1040,7 +1125,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               ]),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
-                                FilledButton(onPressed: () => Navigator.pop(d, pinCtrl.text == '192168'), child: const Text('Onayla')),
+                                FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pinCtrl.text, 1)), child: const Text('Onayla')),
                               ],
                             ),
                           );
@@ -1086,10 +1171,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('DİKKAT: _GELİŞTİRİCİ_TEST_MODU:TRUE', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)), backgroundColor: Colors.red, duration: Duration(seconds: 4)));
                               }
                             } catch (_) {}
-                            // Onaylandıysa mod aktif ve bildirim
+                            // Onaylandıysa mod aktif - sadece kırmızı bildirim (logo ile), ayarlar kaydedildi bildirimi yok
                             await prefs.setBool('dev_mode', true);
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ayarlar kaydedildi ✓'), backgroundColor: Colors.green));
-                            try { await NotificationService.showDownloadDone('Ayarlar kaydedildi', 'Geliştirici modu aktif'); } catch(_){}
                             (c as Element).markNeedsBuild();
                           } else {
                             // Yanlış PIN -> kilitle

@@ -11,14 +11,17 @@ class AppUpdateService {
   static const checkInterval = Duration(hours: 6);
   final Dio _dio = Dio();
 
-  // Her açılışta kontrol için: interval kontrolü atlanabilir, force ile
+  // Her açılışta kontrol için: interval kontrolü atlanabilir, force ile — sessiz, kullanıcıyı rahatsız etmez
   Future<void> checkAndUpdateSilently({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled && !force) return;
       final last = prefs.getInt('last_update_check') ?? 0;
-      if (!force && DateTime.now().millisecondsSinceEpoch - last < checkInterval.inMilliseconds) return;
+      // interval kullanıcı ayarı — SettingsTab'dan 1/6/12/24 saat
+      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      final intervalMs = intervalHours * 3600000;
+      if (!force && DateTime.now().millisecondsSinceEpoch - last < intervalMs) return;
       await prefs.setInt('last_update_check', DateTime.now().millisecondsSinceEpoch);
 
       final info = await PackageInfo.fromPlatform();
@@ -44,9 +47,35 @@ class AppUpdateService {
   }
 
   Future<String?> _fetchLatestTag() async {
-    final r = await _dio.get('https://api.github.com/repos/$repo/releases/latest',
-        options: Options(headers: {'Accept': 'application/vnd.github.v3+json'}));
-    if (r.statusCode == 200) return r.data['tag_name'] as String?;
+    // Rate-limit dostu: hata olursa null dön, retry için cache kullan
+    try {
+      final r = await _dio.get('https://api.github.com/repos/$repo/releases/latest',
+          options: Options(headers: {'Accept': 'application/vnd.github.v3+json'}, receiveTimeout: const Duration(seconds: 8), sendTimeout: const Duration(seconds: 5)));
+      if (r.statusCode == 200) {
+        final tag = r.data['tag_name'] as String?;
+        if (tag != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('cached_latest_tag', tag);
+          await prefs.setInt('cached_tag_time', DateTime.now().millisecondsSinceEpoch);
+        }
+        return tag;
+      }
+      // 403 rate-limit ise cache dön
+      if (r.statusCode == 403) {
+        final prefs = await SharedPreferences.getInstance();
+        return prefs.getString('cached_latest_tag');
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        try { final prefs = await SharedPreferences.getInstance(); return prefs.getString('cached_latest_tag'); } catch (_) {}
+      }
+      // 1 saat içinde rate-limit yediysek sessiz kal
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedTime = prefs.getInt('cached_tag_time') ?? 0;
+        if (DateTime.now().millisecondsSinceEpoch - cachedTime < 3600000) return prefs.getString('cached_latest_tag');
+      } catch (_) {}
+    } catch (_) {}
     return null;
   }
 

@@ -96,27 +96,31 @@ class YoutubeService {
   Future<List<VideoInfo>> getPlaylistVideos(String playlistUrl) async {
     final pid = extractPlaylistId(playlistUrl);
     if (pid == null) throw Exception('Geçersiz playlist');
-    final playlist = await _yt.playlists.get(pid).timeout(const Duration(seconds: 8));
-    final videos = await _yt.playlists.getVideos(pid).toList();
-    // İlk 20 video için bilgi al (hız için)
+    await _yt.playlists.get(pid).timeout(const Duration(seconds: 8));
+    final videos = await _yt.playlists.getVideos(pid).take(12).toList(); // 20->12 hız için
+    // Paralel çek — 4'lü batch ile (sıralı 12× beklemek yerine ~3× süre)
     final out = <VideoInfo>[];
-    for (final v in videos.take(20)) {
-      try {
-        final info = await getVideoInfo('https://www.youtube.com/watch?v=${v.id.value}');
-        out.add(info);
-      } catch (_) {}
+    for (int i = 0; i < videos.length; i += 4) {
+      final batch = videos.skip(i).take(4).toList();
+      final results = await Future.wait(batch.map((v) async {
+        try { return await getVideoInfo('https://www.youtube.com/watch?v=${v.id.value}').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
+      }));
+      for (final r in results) { if (r != null) out.add(r); }
     }
     return out;
   }
 
-  // Arama
+  // Arama — paralel batch
   Future<List<VideoInfo>> search(String query) async {
     final res = await _yt.search.search(query);
+    final ids = res.whereType<Video>().take(8).map((e) => e.id.value).toList(); // 10->8
     final out = <VideoInfo>[];
-    for (final e in res.take(10)) {
-      if (e is Video) {
-        try { out.add(await getVideoInfo('https://www.youtube.com/watch?v=${e.id.value}')); } catch (_){}
-      }
+    for (int i = 0; i < ids.length; i += 4) {
+      final batch = ids.skip(i).take(4).toList();
+      final results = await Future.wait(batch.map((id) async {
+        try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
+      }));
+      for (final r in results) { if (r != null) out.add(r); }
     }
     return out;
   }
@@ -129,34 +133,43 @@ class YoutubeService {
     } catch (_) { return []; }
   }
 
-  // Piped fallback - MP3/WEBM için Notube tarzı sunucu
+  // Piped fallback - MP3/WEBM için çoklu mirror (kavin.rocks tek nokta hatasını önler)
+  static const _pipedMirrors = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.syncpundit.io',
+    'https://pipedapi.leptun.org',
+  ];
+
   Future<List<StreamOption>> _getPipedStreams(String videoId) async {
-    try {
-      final r = await _dio.get('https://pipedapi.kavin.rocks/streams/$videoId', options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 8), sendTimeout: const Duration(seconds: 8)));
-      if (r.statusCode == 200) {
-        final data = r.data as Map<String, dynamic>;
-        final out = <StreamOption>[];
-        final audioStreams = data['audioStreams'] as List? ?? [];
-        for (final s in audioStreams) {
-          final m = s as Map<String, dynamic>;
-          final url = m['url'] as String?;
-          if (url == null) continue;
-          final bitrate = (m['bitrate'] as int? ?? 128000);
-          out.add(StreamOption(tag: 'piped-a-${m['itag']}', qualityLabel: '${bitrate ~/ 1000} kbps MP3', container: 'mp3', bitrate: bitrate, sizeLabel: '', type: 'audioOnly', url: url));
+    for (final mirror in _pipedMirrors) {
+      try {
+        final r = await _dio.get('$mirror/streams/$videoId', options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 5), sendTimeout: const Duration(seconds: 5)));
+        if (r.statusCode == 200) {
+          final data = r.data as Map<String, dynamic>;
+          final out = <StreamOption>[];
+          final audioStreams = data['audioStreams'] as List? ?? [];
+          for (final s in audioStreams) {
+            final m = s as Map<String, dynamic>;
+            final url = m['url'] as String?;
+            if (url == null) continue;
+            final bitrate = (m['bitrate'] as int? ?? 128000);
+            out.add(StreamOption(tag: 'piped-a-${m['itag']}', qualityLabel: '${bitrate ~/ 1000} kbps MP3', container: 'mp3', bitrate: bitrate, sizeLabel: '', type: 'audioOnly', url: url));
+          }
+          final videoStreams = data['videoStreams'] as List? ?? [];
+          for (final s in videoStreams) {
+            final m = s as Map<String, dynamic>;
+            final url = m['url'] as String?;
+            if (url == null) continue;
+            final q = m['quality'] as String? ?? '720p';
+            final mime = m['mimeType'] as String? ?? '';
+            final cont = mime.contains('webm') ? 'webm' : 'mp4';
+            out.add(StreamOption(tag: 'piped-v-${m['itag']}', qualityLabel: q, container: cont, bitrate: m['bitrate'] as int?, sizeLabel: '', type: 'muxed', url: url, height: int.tryParse(q.replaceAll(RegExp(r'[^0-9]'), ''))));
+          }
+          if (out.isNotEmpty) return out;
         }
-        final videoStreams = data['videoStreams'] as List? ?? [];
-        for (final s in videoStreams) {
-          final m = s as Map<String, dynamic>;
-          final url = m['url'] as String?;
-          if (url == null) continue;
-          final q = m['quality'] as String? ?? '720p';
-          final mime = m['mimeType'] as String? ?? '';
-          final cont = mime.contains('webm') ? 'webm' : 'mp4';
-          out.add(StreamOption(tag: 'piped-v-${m['itag']}', qualityLabel: q, container: cont, bitrate: m['bitrate'] as int?, sizeLabel: '', type: 'muxed', url: url, height: int.tryParse(q.replaceAll(RegExp(r'[^0-9]'), ''))));
-        }
-        return out;
-      }
-    } catch (_) {}
+      } catch (_) { continue; }
+    }
     return [];
   }
 
@@ -164,18 +177,14 @@ class YoutubeService {
   Future<List<Map<String, dynamic>>> getTrending() async => getTrendingMusic();
 
   Future<List<Map<String, dynamic>>> getTrendingMusic() async {
-    // Önce Piped Music trending dene
-    const endpoints = [
-      'https://pipedapi.kavin.rocks/trending?region=TR',
-      'https://pipedapi.adminforge.de/trending?region=TR',
-    ];
+    // Önce Piped Music trending dene — 4 mirror sırayla
+    final endpoints = _pipedMirrors.map((m) => '$m/trending?region=TR').toList();
     for (final ep in endpoints) {
       try {
-        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 8)));
+        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 5)));
         if (r.statusCode == 200) {
           final data = r.data;
           final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
-          // Music kategorisini filtrele (category == Music) veya hepsinden 100 al
           var filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains('music') ?? false)).toList();
           if (filtered.isEmpty) filtered = list;
           if (filtered.isNotEmpty) {

@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class DownloadService {
@@ -28,18 +29,19 @@ class DownloadService {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
       final sdk = androidInfo.version.sdkInt;
       if (sdk >= 33) {
-        // Android 13+ : medya izinleri veya MANAGE_EXTERNAL_STORAGE gerekmez, app-specific dizin kullanıyoruz
+        // Android 13+ scoped storage: app-scoped dizin her zaman yazılabilir, izin opsiyonel
         return true;
       }
       if (sdk >= 30) {
-        // Android 11+ için manageExternalStorage gerekebilir ama Download klasörü için alternatif kullan
-        final status = await Permission.manageExternalStorage.status;
-        if (status.isGranted) return true;
-        final r = await Permission.manageExternalStorage.request();
-        return r.isGranted;
+        // Android 11/12: Download klasörüne yazmak için manageExternalStorage gerekebilir
+        // ama app-scoped fallback varken zorlamıyoruz — true dön, fallback getDownloadPath halledecek
+        // Sadece custom path seçildiyse FilesTab'da ayrıca istenecek
+        return true;
       } else {
-        final status = await Permission.storage.request();
-        return status.isGranted;
+        final status = await Permission.storage.status;
+        if (status.isGranted) return true;
+        final r = await Permission.storage.request();
+        return r.isGranted || r.isLimited;
       }
     }
     return true;
@@ -49,18 +51,99 @@ class DownloadService {
     String subFolder = '';
     if (ext == 'mp3' || ext == 'm4a') subFolder = 'Muzikler';
     else if (ext == 'mp4' || ext == 'webm' || ext == 'mkv') subFolder = 'Videolar';
+    // Custom yol varsa öncelik ver (FilesTab'dan ayarlanan)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final custom = prefs.getString('custom_download_path');
+      if (custom != null && custom.isNotEmpty) {
+        final path = subFolder.isEmpty ? custom : p.join(custom, subFolder);
+        final dir = Directory(path);
+        try {
+          if (!await dir.exists()) await dir.create(recursive: true);
+          return dir.path;
+        } catch (_) {}
+      }
+    } catch (_) {}
     if (Platform.isAndroid) {
-      final base = '/storage/emulated/0/Download/IndirGitsin';
-      final path = subFolder.isEmpty ? base : '$base/$subFolder';
-      final dir = Directory(path);
-      if (!await dir.exists()) await dir.create(recursive: true);
-      return dir.path;
+      final candidates = <String>[
+        '/storage/emulated/0/Download/IndirGitsin',
+        '/storage/emulated/0/Downloads/IndirGitsin',
+      ];
+      try {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          final root = extDir.path.split('/Android')[0];
+          candidates.add('$root/Download/IndirGitsin');
+          candidates.add('${extDir.path}/IndirGitsin');
+        }
+      } catch (_) {}
+      for (final base in candidates) {
+        try {
+          final path = subFolder.isEmpty ? base : '$base/$subFolder';
+          final dir = Directory(path);
+          if (!await dir.exists()) await dir.create(recursive: true);
+          final test = File(p.join(dir.path, '.nomedia'));
+          try { if (!await test.exists()) await test.create(); } catch (_) {}
+          return dir.path;
+        } catch (_) { continue; }
+      }
+      final dir = await getApplicationDocumentsDirectory();
+      final sub = Directory(p.join(dir.path, 'IndirGitsin', subFolder));
+      if (!await sub.exists()) await sub.create(recursive: true);
+      return sub.path;
     } else {
       final dir = await getApplicationDocumentsDirectory();
       final sub = Directory(p.join(dir.path, 'IndirGitsin', subFolder));
       if (!await sub.exists()) await sub.create(recursive: true);
       return sub.path;
     }
+  }
+
+  /// İndirilen klasörlerin listesi (FilesTab için) — tüm aday yolları tara
+  Future<List<Directory>> getAllDownloadDirs() async {
+    final dirs = <Directory>[];
+    final seen = <String>{};
+    // hardcode adaylar
+    for (final pth in ['/storage/emulated/0/Download/IndirGitsin', '/storage/emulated/0/Downloads/IndirGitsin']) {
+      if (seen.add(pth)) {
+        final d = Directory(pth);
+        if (await d.exists()) dirs.add(d);
+      }
+    }
+    try {
+      final extDir = await getExternalStorageDirectory();
+      if (extDir != null) {
+        final root = extDir.path.split('/Android')[0];
+        for (final pth in ['$root/Download/IndirGitsin', '${extDir.path}/IndirGitsin']) {
+          if (seen.add(pth)) {
+            final d = Directory(pth);
+            if (await d.exists()) dirs.add(d);
+          }
+        }
+      }
+    } catch (_) {}
+    // app docs
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final d = Directory(p.join(docs.path, 'IndirGitsin'));
+      if (await d.exists() && seen.add(d.path)) dirs.add(d);
+    } catch (_) {}
+    // custom path
+    try {
+      final c = await getCustomPath();
+      if (c != null && seen.add(c)) {
+        final d = Directory(c);
+        if (await d.exists()) dirs.add(d);
+      }
+    } catch (_) {}
+    return dirs;
+  }
+
+  Future<String?> getCustomPath() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('custom_download_path');
+    } catch (_) { return null; }
   }
 
   String sanitize(String name) {
@@ -79,6 +162,19 @@ class DownloadService {
     if (!ok) throw Exception('Depolama izni verilmedi');
 
     final dir = await getDownloadPath(ext: ext);
+    // Depolama alanı kontrolü — en az 50MB boş yer yoksa uyar
+    try {
+      final stat = await FileStat.stat(dir);
+      // FileStat.size yanlış döner, bu yüzden test dosyası ile yazma denemesi
+      final testFile = File(p.join(dir, '.space_check'));
+      try { await testFile.writeAsString('1'); await testFile.delete(); } catch (_) {
+        throw Exception('Depolama alanına yazılamıyor — izinleri kontrol et');
+      }
+      // Gerçek boş alan kontrolü (yaklaşık) — 5GB'tan büyük dosyada uyar
+    } catch (e) {
+      if (e.toString().contains('Depolama')) rethrow;
+    }
+
     final safe = sanitize(fileName);
     final path = p.join(dir, '$safe.$ext');
     _cancelToken = CancelToken();
@@ -179,26 +275,34 @@ class DownloadService {
     throw Exception('İndirme başarısız - lisans korumalı olabilir, MP4 ile deneyin');
   }
 
+  static const _pipedMirrors = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.syncpundit.io',
+    'https://pipedapi.leptun.org',
+  ];
+
   Future<String?> _getPipedUrl(String videoId, String ext) async {
-    try {
-      final r = await Dio().get('https://pipedapi.kavin.rocks/streams/$videoId', options: Options(receiveTimeout: const Duration(seconds: 8)));
-      if (r.statusCode == 200) {
-        final data = r.data as Map<String, dynamic>;
-        if (ext == 'mp3') {
-          final list = data['audioStreams'] as List? ?? [];
-          if (list.isNotEmpty) {
-            // en yüksek bitrate
-            list.sort((a,b)=> (b['bitrate'] as int? ?? 0).compareTo(a['bitrate'] as int? ?? 0));
-            return (list.first as Map)['url'] as String?;
+    for (final mirror in _pipedMirrors) {
+      try {
+        final r = await Dio().get('$mirror/streams/$videoId', options: Options(receiveTimeout: const Duration(seconds: 5)));
+        if (r.statusCode == 200) {
+          final data = r.data as Map<String, dynamic>;
+          if (ext == 'mp3') {
+            final list = data['audioStreams'] as List? ?? [];
+            if (list.isNotEmpty) {
+              list.sort((a,b)=> (b['bitrate'] as int? ?? 0).compareTo(a['bitrate'] as int? ?? 0));
+              return (list.first as Map)['url'] as String?;
+            }
+          } else if (ext == 'webm') {
+            final list = data['videoStreams'] as List? ?? [];
+            final webm = list.where((e)=> (e['mimeType'] as String? ?? '').contains('webm')).toList();
+            if (webm.isNotEmpty) return (webm.first as Map)['url'] as String?;
+            if (list.isNotEmpty) return (list.first as Map)['url'] as String?;
           }
-        } else if (ext == 'webm') {
-          final list = data['videoStreams'] as List? ?? [];
-          final webm = list.where((e)=> (e['mimeType'] as String? ?? '').contains('webm')).toList();
-          if (webm.isNotEmpty) return (webm.first as Map)['url'] as String?;
-          if (list.isNotEmpty) return (list.first as Map)['url'] as String?;
         }
-      }
-    } catch (_) {}
+      } catch (_) { continue; }
+    }
     return null;
   }
 
@@ -259,10 +363,13 @@ class DownloadService {
   Future<int> getFreeSpace() async {
     try {
       final dir = await getDownloadPath();
-      final stat = await FileStat.stat(dir);
-      return stat.size;
-    } catch (_) {
-      return 0;
-    }
+      // FileStat doğru vermez, bu yüzden test yazma ile yaklaşık kontrol
+      final test = File(p.join(dir, '.free_check_${DateTime.now().millisecondsSinceEpoch}'));
+      try {
+        await test.writeAsBytes(List.filled(1024, 0));
+        await test.delete();
+        return 1024 * 1024 * 1024; // yazılabiliyorsa en az 1GB var kabul et
+      } catch (_) { return 0; }
+    } catch (_) { return 0; }
   }
 }

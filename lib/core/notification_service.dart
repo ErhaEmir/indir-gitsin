@@ -24,6 +24,7 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/launcher_icon',
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const details = NotificationDetails(android: androidDetails);
     await _plugin.show(0, 'Video indirildi', title, details, payload: path);
@@ -43,6 +44,8 @@ class NotificationService {
       priority: Priority.high,
       color: color ?? const Color(0xFFFF0000),
       icon: '@mipmap/launcher_icon',
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
+      styleInformation: BigTextStyleInformation(body, htmlFormatBigText: true),
     );
     await _plugin.show(2, title, body, NotificationDetails(android: androidDetails));
   }
