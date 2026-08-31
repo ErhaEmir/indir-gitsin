@@ -201,8 +201,8 @@ class YoutubeService {
       // Her çağrıda 20-30 farklı şarkıyı öne getir (kitleyi çekmek için)
       return shuffled;
     }
-    // forceRefresh ise rastgele bölge + rastgele kategori ile farklı içerik
-    final region = forceRefresh ? (_trendingRegions..shuffle()).first : 'TR';
+    // forceRefresh ise rastgele bölge ile farklı içerik (const list shuffle hatası düzeltildi)
+    final region = forceRefresh ? (List.of(_trendingRegions)..shuffle()).first : 'TR';
     final endpoints = _pipedMirrors.take(3).map((m) => '$m/trending?region=$region').toList();
     final futures = endpoints.map((ep) async {
       try {
@@ -272,7 +272,7 @@ class YoutubeService {
     }
     // Fallback: youtube_explode search ile — forceRefresh ise rastgele sorgu ile farklı sonuç
     try {
-      final query = forceRefresh ? (_trendingQueries..shuffle()).first : 'Top 100 Turkey Music 2024';
+      final query = forceRefresh ? (List.of(_trendingQueries)..shuffle()).first : 'Top 100 Turkey Music 2024';
       final res = await _yt.search.search(query).timeout(const Duration(seconds: 6));
       final out = <Map<String,dynamic>>[];
       for (final e in res.take(40)) {
