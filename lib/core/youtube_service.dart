@@ -110,17 +110,27 @@ class YoutubeService {
     return out;
   }
 
-  // Arama — paralel batch
+  // Arama — hafif mod: search sonucundan direkt VideoInfo üret (getVideoInfo çağrısı yok, hızlı & stabil)
   Future<List<VideoInfo>> search(String query) async {
-    final res = await _yt.search.search(query);
-    final ids = res.whereType<Video>().take(8).map((e) => e.id.value).toList(); // 10->8
+    final res = await _yt.search.search(query).timeout(const Duration(seconds: 8));
     final out = <VideoInfo>[];
-    for (int i = 0; i < ids.length; i += 4) {
-      final batch = ids.skip(i).take(4).toList();
-      final results = await Future.wait(batch.map((id) async {
-        try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
-      }));
-      for (final r in results) { if (r != null) out.add(r); }
+    for (final e in res) {
+      if (e is Video) {
+        if (out.length >= 10) break;
+        // Search sonucundan direkt kur — manifest çekmeden, anında döner
+        out.add(VideoInfo(
+          id: e.id.value,
+          title: e.title,
+          author: e.author,
+          channelId: e.channelId.value,
+          duration: e.duration,
+          thumbnailUrl: e.thumbnails.highResUrl,
+          description: e.description,
+          viewCount: e.engagement.viewCount,
+          uploadDate: e.uploadDate,
+          streams: [], // detay için tıklayınca _fetch -> getVideoInfo çağrılacak
+        ));
+      }
     }
     return out;
   }
@@ -176,12 +186,20 @@ class YoutubeService {
   // Trend (Keşfet) - YouTube Music Top 100 için Piped + youtube_explode fallback
   Future<List<Map<String, dynamic>>> getTrending() async => getTrendingMusic();
 
+  // Trending cache — 15 dk içinde tekrar çağrılırsa anında döner
+  static List<Map<String, dynamic>>? _trendingCache;
+  static DateTime? _trendingCacheAt;
+  static const _trendingTtl = Duration(minutes: 15);
+
   Future<List<Map<String, dynamic>>> getTrendingMusic() async {
-    // Önce Piped Music trending dene — 4 mirror sırayla
-    final endpoints = _pipedMirrors.map((m) => '$m/trending?region=TR').toList();
-    for (final ep in endpoints) {
+    if (_trendingCache != null && _trendingCacheAt != null && DateTime.now().difference(_trendingCacheAt!) < _trendingTtl) {
+      return _trendingCache!;
+    }
+    // Paralel mirror dene — ilk dönen kazanır (sıralı 4×5s yerine ~3s)
+    final endpoints = _pipedMirrors.take(3).map((m) => '$m/trending?region=TR').toList();
+    final futures = endpoints.map((ep) async {
       try {
-        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 5)));
+        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 4)));
         if (r.statusCode == 200) {
           final data = r.data;
           final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
@@ -197,19 +215,63 @@ class YoutubeService {
             }).where((m)=> (m['id'] as String).length==11).toList();
           }
         }
+      } catch (_) {}
+      return <Map<String, dynamic>>[];
+    }).toList();
+    // İlk başarılı sonuç
+    for (final f in futures) {
+      try {
+        final res = await f.timeout(const Duration(seconds: 5));
+        if (res.isNotEmpty) {
+          _trendingCache = res;
+          _trendingCacheAt = DateTime.now();
+          return res;
+        }
+      } catch (_) {}
+    }
+    // Hiçbiri dönmediyse sırayla tek tek dene (fallback)
+    for (final ep in endpoints) {
+      try {
+        final r = await _dio.get(ep, options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 4)));
+        if (r.statusCode == 200) {
+          final data = r.data;
+          final list = data is List ? data : (data is Map ? data['videos'] as List? ?? [] : []);
+          var filtered = list.where((e)=> (e['category']?.toString().toLowerCase().contains('music') ?? false)).toList();
+          if (filtered.isEmpty) filtered = list;
+          if (filtered.isNotEmpty) {
+            final res = filtered.take(100).map((e) => {
+              'id': (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first,
+              'title': e['title'] ?? '',
+              'thumbnail': e['thumbnail'] ?? e['thumbnailUrl'] ?? '',
+              'author': e['uploaderName'] ?? e['uploader'] ?? '',
+              'views': e['views'] ?? 0,
+            }).where((m)=> (m['id'] as String).length==11).toList();
+            if (res.isNotEmpty) {
+              _trendingCache = res;
+              _trendingCacheAt = DateTime.now();
+              return res;
+            }
+          }
+        }
       } catch (_) { continue; }
     }
     // Fallback: youtube_explode search ile Top 100 Music
     try {
-      final res = await _yt.search.search('Top 100 Turkey Music 2024');
+      final res = await _yt.search.search('Top 100 Turkey Music 2024').timeout(const Duration(seconds: 6));
       final out = <Map<String,dynamic>>[];
-      for (final e in res.take(100)) {
+      for (final e in res.take(40)) {
         if (e is Video) {
           out.add({'id': e.id.value, 'title': e.title, 'thumbnail': e.thumbnails.highResUrl, 'author': e.author, 'views': e.engagement.viewCount ?? 0});
         }
       }
-      if (out.isNotEmpty) return out;
+      if (out.isNotEmpty) {
+        _trendingCache = out;
+        _trendingCacheAt = DateTime.now();
+        return out;
+      }
     } catch (_){}
+    // Cache varsa onu dön (eski veri bile boş ekrandan iyidir)
+    if (_trendingCache != null && _trendingCache!.isNotEmpty) return _trendingCache!;
     return [];
   }
 

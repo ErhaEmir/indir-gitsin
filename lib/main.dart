@@ -128,39 +128,39 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled) return;
-      // Aralığa göre kontrol et
-      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      // Aralığa göre kontrol et (dakika bazlı, eski saat key'i ile uyumlu)
+      int intervalMin = prefs.getInt('update_interval_minutes') ?? (prefs.getInt('update_interval_hours') ?? 6) * 60;
       final last = prefs.getInt('last_update_check') ?? 0;
-      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
-      if (hoursPassed < intervalHours) return;
+      final minsPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*60);
+      if (minsPassed < intervalMin) return;
       final res = await AppUpdateService().checkForUpdateManual();
       if (res!=null && res['hasUpdate']==true && mounted) {
         final current = res['current'];
         final latest = res['latest'];
         showDialog(context: context, builder: (c)=> AlertDialog(
           title: Row(children: [Icon(Icons.system_update_rounded, color: Theme.of(c).colorScheme.primary), const SizedBox(width:8), Text('update_available'.tr())]),
-          content: Text('Güncelleme var! $current → $latest güncellensin mi?'),
+          content: Text('update_available_msg'.tr(namedArgs: {'current': '$current', 'latest': '$latest'})),
           actions: [
             TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Daha sonra'.tr())),
             FilledButton(onPressed: () async {
               Navigator.pop(c);
               // Direkt ayarlara götür (5 sekme: 0 Home,1 Keşfet,2 Dosyalar,3 Favoriler,4 Ayarlar)
               setState(()=> _idx=4);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ayarlar > Güncellemeleri denetle ile yükleyebilirsin'), behavior: SnackBarBehavior.floating));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('go_to_settings'.tr()), behavior: SnackBarBehavior.floating));
             }, child: Text('Güncelle'.tr())),
           ],
         ));
       }
     });
-    // Periyodik kontrol - ayardaki aralığa göre
-    Timer.periodic(const Duration(hours: 1), (_) async {
+    // Periyodik kontrol - 5 dkda bir bak (anında modu için), aralık ayarı içinde kontrol edilir
+    Timer.periodic(const Duration(minutes: 5), (_) async {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled) return;
-      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      int intervalMin = prefs.getInt('update_interval_minutes') ?? (prefs.getInt('update_interval_hours') ?? 6) * 60;
       final last = prefs.getInt('last_update_check') ?? 0;
-      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
-      if (hoursPassed >= intervalHours) AppUpdateService().checkAndUpdateSilently();
+      final minsPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*60);
+      if (minsPassed >= intervalMin) AppUpdateService().checkAndUpdateSilently();
     });
   }
 
@@ -454,7 +454,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
         StorageService.addHistory({'id': info.id, 'title': info.title, 'thumbnail': info.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${info.id}', 'path': '', 'date': DateTime.now().toIso8601String()});
       } catch (_) {}
     }
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist indirildi (${_playlist.length})'), behavior: SnackBarBehavior.floating));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('playlist_downloaded'.tr(namedArgs: {'count': '${_playlist.length}'})), behavior: SnackBarBehavior.floating));
   }
 
   void _applyProfile(String p) {
@@ -475,8 +475,8 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
   Future<void> _downloadSubtitle() async {
     if (_video==null) return;
     final caps = await ref.read(youtubeServiceProvider).getCaptionTracks(_video!.id);
-    if (caps.isEmpty) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Altyazı bulunamadı'))); return;}
-    if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Altyazı seçenekleri: ${caps.join(', ')}'), behavior: SnackBarBehavior.floating));
+    if (caps.isEmpty) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('subtitle_not_found'.tr()))); return;}
+    if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('subtitle_options'.tr(namedArgs: {'options': caps.join(', ')})), behavior: SnackBarBehavior.floating));
   }
 
   List<StreamOption> _filteredStreams() {
@@ -502,10 +502,25 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     final ext = _selected!.type == 'audioOnly' ? 'm4a' : extRaw;
     try {
       final svc = ref.read(downloadServiceProvider);
+      int _lastRx = 0;
+      DateTime _lastUpdate = DateTime.now();
       final path = await svc.download(
         url: _selected!.url, fileName: _video!.title, ext: ext,
         videoId: _video!.id, streamTag: _selected!.tag,
-        onProgress: (rx, total) { if (total > 0 && mounted) setState(() => _progress = rx / total); },
+        onProgress: (rx, total) {
+          if (!mounted) return;
+          // total bilinmiyorsa (-1/0) progress bar indeterminate değilse takılı kalır — sadece rx/total>0 iken güncelle, throttle 150ms
+          if (total > 0) {
+            final now = DateTime.now();
+            if (rx == total || now.difference(_lastUpdate).inMilliseconds > 150 || (rx - _lastRx).abs() > total * 0.01) {
+              _lastRx = rx;
+              _lastUpdate = now;
+              final p = (rx / total).clamp(0.0, 1.0);
+              // geriye gitmeyi engelle (retry sonrası)
+              if (p >= _progress) setState(() => _progress = p);
+            }
+          }
+        },
       );
       StorageService.addHistory({'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${_video!.id}', 'path': path, 'date': DateTime.now().toIso8601String()});
       setState(() { _savedPath = path; _downloading = false; _progress = 1; });
@@ -599,8 +614,8 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                 child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
                   Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.share_rounded, color: Colors.white, size:18)),
                   const SizedBox(width:10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Arkadaşını davet et', style: const TextStyle(fontWeight: FontWeight.w800)), Text('İndir Gitsin\'i paylaş, herkes hızlı indirsin', style: TextStyle(color: Colors.grey[600], fontSize:11))])),
-                  FilledButton.tonalIcon(onPressed: () async { await Share.share('İndir Gitsin - YouTube & Music indirici https://github.com/ErhaEmir/indir-gitsin/releases'); }, icon: const Icon(Icons.send_rounded, size:16), label: const Text('Davet')),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('invite_title'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)), Text('invite_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize:11))])),
+                  FilledButton.tonalIcon(onPressed: () async { await Share.share('İndir Gitsin - YouTube & Music indirici https://github.com/ErhaEmir/indir-gitsin/releases'); }, icon: const Icon(Icons.send_rounded, size:16), label: Text('invite'.tr())),
                 ])),
               ),
               const SizedBox(height: 12),
@@ -609,7 +624,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
               TextField(
                 controller: _searchCtrl,
                 decoration: InputDecoration(
-                  hintText: 'YouTube\'de ara...',
+                  hintText: 'search_hint'.tr(),
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: IconButton(icon: const Icon(Icons.send_rounded), onPressed: _search),
                   filled: true,
@@ -620,7 +635,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
               if (_searching) const Padding(padding: EdgeInsets.only(top: 6), child: LinearProgressIndicator()),
               if (_searchResults.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text('Arama sonuçları', style: TextStyle(fontWeight: FontWeight.w800)),
+                Text('search_results'.tr(), style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 ..._searchResults.map((v) => Card(child: ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: v.thumbnailUrl, width: 80, height: 45, fit: BoxFit.cover)), title: Text(v.title, maxLines: 1, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)), subtitle: Text(v.author, style: TextStyle(fontSize: 11)), onTap: () { _linkCtrl.text = 'https://www.youtube.com/watch?v=${v.id}'; setState(()=> _searchResults=[]); _fetch(); }))),
               ],
@@ -663,7 +678,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                 const SizedBox(height: 12),
                 const LinearProgressIndicator(minHeight: 4, borderRadius: BorderRadius.all(Radius.circular(99))),
                 const SizedBox(height: 8),
-                Text('Video çözümleniyor...', style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+                Text('video_resolving'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 _shimmer(isDark),
               ],
@@ -674,7 +689,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(color: cs.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(14), border: Border.all(color: cs.primary.withOpacity(0.2))),
-                  child: Row(children: [Icon(Icons.download_done_rounded, color: cs.primary), const SizedBox(width: 8), Text('Video hazır - indirme seçenekleri', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onPrimaryContainer, fontSize: 13)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(99)), child: const Text('HAZIR', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)))]),
+                  child: Row(children: [Icon(Icons.download_done_rounded, color: cs.primary), const SizedBox(width: 8), Text('video_ready_options'.tr(), style: TextStyle(fontWeight: FontWeight.w800, color: cs.onPrimaryContainer, fontSize: 13)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(99)), child: Text('ready_badge'.tr(), style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)))]),
                 ),
                 const SizedBox(height: 10),
                 Row(children: [IconButton(icon: Icon(StorageService.isFav(_video!.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Colors.red), onPressed: () { StorageService.toggleFav(_video!.id, {'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl}); setState(() {}); }), Text('add_favorite'.tr()), const Spacer(), Text('options_count'.tr(namedArgs: {'count': '${_video!.streams.length}'}), style: const TextStyle(color: Colors.grey))]),
@@ -704,7 +719,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                   style: ButtonStyle(visualDensity: VisualDensity.compact),
                 ),
                 const SizedBox(height: 4),
-                Text(_dlTab==0 ? 'MP4 - en uyumlu, her cihazda oynar' : _dlTab==1 ? 'MP3 - sadece ses, en küçük boyut' : 'WEBM - yüksek verim, modern codec', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                Text(_dlTab==0 ? 'mp4_desc'.tr() : _dlTab==1 ? 'mp3_desc'.tr() : 'webm_desc'.tr(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                 const SizedBox(height: 8),
                 ..._filteredStreams().asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
@@ -815,7 +830,7 @@ class FilesTabState extends State<FilesTab> {
       for (final pth in candidates) {
         final dir = Directory(pth);
         if (await dir.exists()) {
-          final files = await dir.list(recursive: true).where((e)=> e is File).toList();
+          final files = await dir.list(recursive: true).where((e)=> e is File && !e.path.split('/').last.startsWith('.') && !e.path.endsWith('.nomedia') && !e.path.contains('.free_check') && !e.path.contains('.space_check')).toList();
           for (final f in files) { if (seenPaths.add(f.path)) all.add(f); }
         }
       }
@@ -831,7 +846,7 @@ class FilesTabState extends State<FilesTab> {
   }
   Future<void> _rename(File f) async {
     final ctrl = TextEditingController(text: f.path.split('/').last);
-    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('Yeniden adlandır'), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
+    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(title: Text('rename'.tr()), content: TextField(controller: ctrl), actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))]));
     if (ok==true && ctrl.text.isNotEmpty) {
       try {
         final dir = f.parent.path; // aynı klasörde yeniden adlandır
@@ -882,7 +897,7 @@ class FilesTabState extends State<FilesTab> {
           PopupMenuItem(value:'storage', child: Row(children: [const Icon(Icons.folder_open_rounded, size:16), const SizedBox(width:8), Text('choose_storage'.tr())])),
         ]),
       ]),
-      body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), Text('İndirilenler /Download/IndirGitsin veya seçili klasörde görünür', style: TextStyle(fontSize:11, color: Colors.grey[600])), TextButton(onPressed: _load, child: const Text('Yenile'))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
+      body: _files.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.folder_rounded, size:48, color: Colors.grey[400]), const SizedBox(height:8), Text('no_downloads'.tr()), Text('storage_hint'.tr(), style: TextStyle(fontSize:11, color: Colors.grey[600])), TextButton(onPressed: _load, child: Text('refresh'.tr()))])) : RefreshIndicator(onRefresh: _load, child: ListView.separated(itemCount: _files.length, separatorBuilder: (_,__)=> const Divider(height:1), itemBuilder: (c,i){
         final f = _files[i] as File; final name = f.path.split('/').last; final ext = name.split('.').last.toLowerCase(); final isVideo = ['mp4','mkv','webm','avi','mov'].contains(ext); final isAudio = ['mp3','m4a','opus','aac','wav'].contains(ext);
         return ListTile(
           leading: Icon(isVideo ? Icons.videocam_rounded : (isAudio ? Icons.music_note_rounded : Icons.insert_drive_file_rounded), color: Theme.of(context).colorScheme.primary),
@@ -922,18 +937,21 @@ class FavoritesTab extends StatelessWidget { const FavoritesTab({super.key}); @o
 class SettingsTab extends ConsumerStatefulWidget { const SettingsTab({super.key}); @override ConsumerState<SettingsTab> createState()=> _SettingsTabState();}
 class _SettingsTabState extends ConsumerState<SettingsTab> {
   bool _autoUpdate = true;
-  int _interval = 6;
+  int _interval = 360; // dakika (6 saat)
   bool _checking = false;
   String? _status;
-  // PIN doğrulama — düz metin yerine hash karşılaştırma (basit obscure, reverse engel)
   bool _verifyPin(String input, int which) {
     int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
-    if (which == 1) return h == 8922; // 192168 obscure
-    if (which == 2) return h == 509409; // 1221 obscure
+    if (which == 1) return h == 8922;
+    if (which == 2) return h == 509409;
     return false;
   }
   @override void initState(){ super.initState(); _load(); }
-  Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = p.getInt('update_interval_hours') ?? 6 }); }
+  Future<void> _load() async {
+    final p=await SharedPreferences.getInstance();
+    int mins = p.getInt('update_interval_minutes') ?? (p.getInt('update_interval_hours') != null ? p.getInt('update_interval_hours')! * 60 : 360);
+    setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = mins });
+  }
   Future<void> _toggleAuto(bool v) async { setState(()=> _autoUpdate=v); final p=await SharedPreferences.getInstance(); await p.setBool('auto_update_enabled', v); }
   Future<void> _manualCheck() async {
     setState(()=> _checking=true);
@@ -1017,12 +1035,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 value: _interval,
                 underline: Container(height:1, color: Colors.grey[300]),
                 items: [
-                  DropdownMenuItem(value: 1, child: Text('1 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 6, child: Text('6 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 12, child: Text('12 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 24, child: Text('24 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 5, child: Text('5 ' + 'minute'.tr() + ' (' + 'instant_check'.tr() + ')')),
+                  DropdownMenuItem(value: 10, child: Text('10 ' + 'minute'.tr())),
+                  DropdownMenuItem(value: 30, child: Text('30 ' + 'minute'.tr())),
+                  DropdownMenuItem(value: 60, child: Text('1 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 360, child: Text('6 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 720, child: Text('12 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 1440, child: Text('24 ' + 'hour'.tr())),
                 ],
-                onChanged: (v) async { if(v==null) return; final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_hours', v); setState(()=> _interval=v); },
+                onChanged: (v) async {
+                  if(v==null) return;
+                  if (v < 60) {
+                    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(
+                      title: Text('battery_warning_title'.tr()),
+                      content: Text('battery_warning'.tr()),
+                      actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('save'.tr()))],
+                    ));
+                    if (ok != true) return;
+                  }
+                  final p=await SharedPreferences.getInstance();
+                  await p.setInt('update_interval_minutes', v);
+                  await p.remove('update_interval_hours');
+                  setState(()=> _interval=v);
+                },
               ),
             ]),
           ],
@@ -1081,7 +1116,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                   Row(children: [
                     Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bug_report_rounded, color: Colors.deepPurple)),
                     const SizedBox(width: 10),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici Test Modu', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), Text('Sadece PIN bilenler açabilir', style: TextStyle(color: Colors.grey[600], fontSize: 11))])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('dev_mode_title'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), Text('dev_mode_sub'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 11))])),
                     Switch(
                       value: isDev,
                       onChanged: (v) async {

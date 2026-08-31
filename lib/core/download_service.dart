@@ -246,8 +246,7 @@ class DownloadService {
           }
         }
         await Future.delayed(Duration(milliseconds: 800 * (1 << attempt)));
-        // progress'i sıfırla
-        onProgress(0, 0);
+        // progress sıfırlama kaldırıldı — uzun MP4'te çubuk 0'a dönüp kafayı yiyordu
       }
     }
 

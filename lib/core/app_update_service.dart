@@ -18,9 +18,9 @@ class AppUpdateService {
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled && !force) return;
       final last = prefs.getInt('last_update_check') ?? 0;
-      // interval kullanıcı ayarı — SettingsTab'dan 1/6/12/24 saat
-      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
-      final intervalMs = intervalHours * 3600000;
+      // interval dakika bazlı (yeni) — eski saat key'i ile uyumlu
+      int intervalMin = prefs.getInt('update_interval_minutes') ?? (prefs.getInt('update_interval_hours') ?? 6) * 60;
+      final intervalMs = intervalMin * 60000;
       if (!force && DateTime.now().millisecondsSinceEpoch - last < intervalMs) return;
       await prefs.setInt('last_update_check', DateTime.now().millisecondsSinceEpoch);
 
