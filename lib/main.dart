@@ -570,6 +570,25 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       final prefs = await SharedPreferences.getInstance();
       final isDev = prefs.getBool('dev_mode') ?? false;
       final raw = e.toString();
+      // İptal edildiyse: dosyayı sil, dosyalar'a atma, bildirim atma
+      if (raw.contains('İptal') || raw.toLowerCase().contains('cancel')) {
+        setState(() { _downloading = false; _progress = 0; _error = null; });
+        // kısmi dosyayı temizle (her iki klasör varyantını da dene)
+        try {
+          final dir = await DownloadService().getDownloadPath(ext: ext);
+          final safe = DownloadService().sanitize(_video!.title);
+          final p = '$dir/$safe.$ext';
+          final f = File(p);
+          if (await f.exists()) await f.delete();
+          // alt klasörler de (Muzikler/Videolar) kontrol
+          for (final sub in ['Muzikler','Videolar']) {
+            final f2 = File('$dir/$sub/$safe.$ext');
+            if (await f2.exists()) await f2.delete();
+          }
+        } catch(_){}
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('cancel'.tr()), backgroundColor: Colors.grey[700], behavior: SnackBarBehavior.floating));
+        return;
+      }
       String friendly;
       if (isDev) {
         friendly = raw;
@@ -773,7 +792,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                     Text('${(_progress*100).toStringAsFixed(0)}% - indiriliyor...', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                   ])),
                   const SizedBox(width: 8),
-                  OutlinedButton.icon(onPressed: (){ ref.read(downloadServiceProvider).cancel(); setState(()=> _downloading=false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('cancel'.tr()))); }, icon: const Icon(Icons.cancel_rounded, size:16), label: Text('cancel'.tr())),
+                  OutlinedButton.icon(onPressed: (){ ref.read(downloadServiceProvider).cancel(); setState(()=> _downloading=false); }, icon: const Icon(Icons.cancel_rounded, size:16), label: Text('cancel'.tr())),
                 ]),
                 const SizedBox(height: 10),
                 SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: (_downloading || _filteredStreams().isEmpty) ? null : _download, icon: Icon(_savedPath != null ? Icons.check_circle_rounded : Icons.download_rounded), label: Text(_savedPath != null ? 'download_again'.tr() : 'download'.tr()))),

@@ -1,7 +1,7 @@
 name: indir_gitsin
 description: YouTube ve YouTube Music indirme uygulaması - modern ve kullanıcı dostu
 publish_to: 'none'
-version: 1.4.11+35
+version: 1.4.12+36
 
 environment:
   sdk: '>=3.5.0 <4.0.0'

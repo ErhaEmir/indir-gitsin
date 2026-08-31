@@ -193,13 +193,23 @@ class DownloadService {
           if (await f.exists() && await f.length() > 1024) return path;
         }
       } catch (e) {
+        // İptal edildiyse dosyayı sil ve direkt fırlat — fallbacksiz
+        if (e is DioException && e.type == DioExceptionType.cancel) {
+          try { final f = File(p.join(await getDownloadPath(ext: ext), '${sanitize(fileName)}.$ext')); if (await f.exists()) await f.delete(); } catch(_){}
+          rethrow;
+        }
+        if (e.toString().contains('İptal') || e.toString().contains('cancel')) rethrow;
         debugPrint('Piped $ext indirme hata, fallback: $e');
       }
+      // İptal edildiyse fallbacksiz çık
+      if (_cancelToken?.isCancelled ?? false) throw Exception('İptal edildi');
       // Piped olmadıysa explode dene
       if (videoId != null && streamTag != null) {
         try {
           return await _downloadViaExplode(videoId: videoId, streamTag: streamTag, fileName: fileName, ext: ext, onProgress: onProgress);
         } catch (e) {
+          if (e is DioException && e.type == DioExceptionType.cancel) rethrow;
+          if (e.toString().contains('İptal') || e.toString().contains('cancel')) rethrow;
           debugPrint('MP3/WEBM explode hata, dio fallback: $e');
         }
       }
@@ -233,6 +243,11 @@ class DownloadService {
         if (await f.exists() && await f.length() > 1024) return path;
         throw Exception('İndirilen dosya çok küçük - tekrar deneniyor');
       } on DioException catch (e) {
+        // İptal edildiyse hemen sil ve fırlat — retry yok, dosya kalmasın
+        if (e.type == DioExceptionType.cancel) {
+          try { final f = File(path); if (await f.exists()) await f.delete(); } catch(_){}
+          throw Exception('İptal edildi');
+        }
         lastError = e;
         final code = e.response?.statusCode;
         final isRetryable = code == 403 || code == 429 || code == 500 || code == 502 || code == 503 || e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout;
@@ -250,11 +265,14 @@ class DownloadService {
       }
     }
 
+    // İptal edildiyse fallback yok
+    if (_cancelToken?.isCancelled ?? false) throw Exception('İptal edildi');
     // Dio ile olmadiysa youtube_explode stream ile fallback dene
     if (videoId != null && streamTag != null) {
       try {
         return await _downloadViaExplode(videoId: videoId, streamTag: streamTag, fileName: fileName, ext: ext, onProgress: onProgress);
       } catch (e) {
+        if (e.toString().contains('İptal') || e.toString().contains('cancel')) rethrow;
         debugPrint('Explode fallback da hata: $e');
       }
     }
@@ -342,14 +360,24 @@ class DownloadService {
       final sink = file.openWrite();
       int received = 0;
       final total = target.size.totalBytes;
+      bool wasCancelled = false;
       await for (final chunk in stream) {
-        if (_cancelToken?.isCancelled ?? false) break;
+        if (_cancelToken?.isCancelled ?? false) { wasCancelled = true; break; }
         sink.add(chunk);
         received += chunk.length;
         onProgress(received, total);
       }
       await sink.close();
       yt.close();
+      if (wasCancelled || (_cancelToken?.isCancelled ?? false)) {
+        try { if (await file.exists()) await file.delete(); } catch(_){}
+        throw Exception('İptal edildi');
+      }
+      // Dosya çok küçükse sil
+      if (await file.length() < 1024) {
+        try { await file.delete(); } catch(_){}
+        throw Exception('İndirilen dosya bozuk');
+      }
       return path;
     } catch (e) {
       yt.close();
