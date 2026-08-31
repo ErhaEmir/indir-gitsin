@@ -484,12 +484,12 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
     if (_dlTab==0) { // MP4
       final list = _video!.streams.where((s)=> s.container=='mp4').toList();
       return list.isNotEmpty ? list : _video!.streams.where((s)=> s.type=='muxed').toList();
-    } else if (_dlTab==1) { // MP3 (audio)
-      final list = _video!.streams.where((s)=> s.type=='audioOnly').toList();
-      return list.isNotEmpty ? list : _video!.streams;
-    } else { // WEBM
-      final list = _video!.streams.where((s)=> s.container=='webm').toList();
-      return list.isNotEmpty ? list : _video!.streams.where((s)=> s.type=='videoOnly').toList();
+    } else if (_dlTab==1) { // MP3 (audio) — sadece gerçek audioOnly, telifliyse boş döner
+      return _video!.streams.where((s)=> s.type=='audioOnly').toList();
+    } else { // WEBM — videoOnly veya webm container
+      final webm = _video!.streams.where((s)=> s.container=='webm').toList();
+      if (webm.isNotEmpty) return webm;
+      return _video!.streams.where((s)=> s.type=='videoOnly').toList();
     }
   }
 
@@ -539,18 +539,18 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       if (isDev) {
         friendly = raw;
       } else {
-        if (raw.contains('lisans') || raw.contains('Lisans')) friendly = 'Lisans korumalı — MP4 ile tekrar dene veya farklı video dene';
+        if (raw.contains('lisans') || raw.contains('Lisans') || raw.toLowerCase().contains('copyright')) friendly = 'err_license'.tr();
         else if (raw.contains('403')) {
-          if (ext == 'mp3' || ext == 'm4a') friendly = 'MP3 koruması (403) — MP4 veya M4A dene, olmazsa farklı video dene';
-          else if (ext == 'webm') friendly = 'WEBM kısıtlı (403) — MP4 dene';
-          else friendly = 'İndirme reddedildi (403) — MP4 ile tekrar dene';
+          if (ext == 'mp3' || ext == 'm4a') friendly = 'err_mp3_403'.tr();
+          else if (ext == 'webm') friendly = 'err_webm_403'.tr();
+          else friendly = 'err_403'.tr();
         }
-        else if (raw.contains('404')) friendly = 'Format bulunamadı (404) — farklı kalite seç';
-        else if (raw.contains('Depolama izni')) friendly = 'Depolama izni verilmedi — Ayarlar > İzin ver';
-        else if (raw.contains('çok küçük') || raw.contains('küçük')) friendly = 'İndirilen dosya bozuk — tekrar dene, MP4 önerilir';
-        else if (raw.contains('Timeout') || raw.contains('Socket') || raw.contains('zaman aşımı')) friendly = 'Bağlantı zaman aşımı — interneti kontrol et ve tekrar dene';
-        else if (raw.contains('alan') || raw.contains('space')) friendly = 'Depolama alanı yetersiz — yer aç ve tekrar dene';
-        else friendly = 'İndirme başarısız — MP4 ile tekrar dene';
+        else if (raw.contains('404')) friendly = 'err_404'.tr();
+        else if (raw.contains('Depolama izni')) friendly = 'err_storage_perm'.tr();
+        else if (raw.contains('çok küçük') || raw.contains('küçük')) friendly = 'err_file_small'.tr();
+        else if (raw.contains('Timeout') || raw.contains('Socket') || raw.contains('zaman aşımı')) friendly = 'err_timeout'.tr();
+        else if (raw.contains('alan') || raw.contains('space')) friendly = 'err_storage_full'.tr();
+        else friendly = 'err_generic'.tr();
       }
       setState(() { _downloading = false; _error = friendly; });
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -721,7 +721,15 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                 const SizedBox(height: 4),
                 Text(_dlTab==0 ? 'mp4_desc'.tr() : _dlTab==1 ? 'mp3_desc'.tr() : 'webm_desc'.tr(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                 const SizedBox(height: 8),
-                ..._filteredStreams().asMap().entries.map((e) => _tile(e.value, e.key, cs)),
+                if (_filteredStreams().isEmpty) Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.orange.withOpacity(0.3))),
+                  child: Row(children: [
+                    const Icon(Icons.block_rounded, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_dlTab==1 ? 'mp3_unavailable'.tr() : 'videoonly_unavailable'.tr(), style: TextStyle(fontSize: 12, color: Colors.orange[800]))),
+                  ]),
+                ) else ..._filteredStreams().asMap().entries.map((e) => _tile(e.value, e.key, cs)),
                 const SizedBox(height: 12),
                 if (_downloading) Row(children: [
                   Expanded(child: Column(children: [
@@ -730,10 +738,10 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                     Text('${(_progress*100).toStringAsFixed(0)}% - indiriliyor...', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                   ])),
                   const SizedBox(width: 8),
-                  OutlinedButton.icon(onPressed: (){ ref.read(downloadServiceProvider).cancel(); setState(()=> _downloading=false); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İptal edildi'))); }, icon: const Icon(Icons.cancel_rounded, size:16), label: const Text('İptal')),
+                  OutlinedButton.icon(onPressed: (){ ref.read(downloadServiceProvider).cancel(); setState(()=> _downloading=false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('cancel'.tr()))); }, icon: const Icon(Icons.cancel_rounded, size:16), label: Text('cancel'.tr())),
                 ]),
                 const SizedBox(height: 10),
-                SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _downloading ? null : _download, icon: Icon(_savedPath != null ? Icons.check_circle_rounded : Icons.download_rounded), label: Text(_savedPath != null ? 'download_again'.tr() : 'download'.tr()))),
+                SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: (_downloading || _filteredStreams().isEmpty) ? null : _download, icon: Icon(_savedPath != null ? Icons.check_circle_rounded : Icons.download_rounded), label: Text(_savedPath != null ? 'download_again'.tr() : 'download'.tr()))),
                 if (_savedPath != null) Padding(padding: const EdgeInsets.only(top: 8), child: SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerPage(path: _savedPath!, title: _video!.title))), icon: const Icon(Icons.play_arrow_rounded), label: Text('play'.tr())))),
               ],
               if (!_loading && _video == null && _error == null) ...[const SizedBox(height: 20), _empty(context)],
@@ -860,7 +868,7 @@ class FilesTabState extends State<FilesTab> {
         }
         _load();
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Yeniden adlandırma hatası: $e')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'error'.tr()}: $e')));
       }
     }
   }
@@ -972,7 +980,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           actions: [TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('Vazgeç'.tr())), FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('Yükle'.tr()))],
         ));
         if(ok==true){
-          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('İndiriliyor...'.tr()), behavior: SnackBarBehavior.floating));
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('downloading'.tr()), behavior: SnackBarBehavior.floating));
           final tag = latest as String;
           await AppUpdateService().downloadAndInstall(tag, onProgress: (rx,total){});
           setState(()=> _status='İndirildi, kurulum başlatıldı');
@@ -1129,23 +1137,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             final ok2 = await showDialog<bool>(
                               context: context,
                               builder: (d) => AlertDialog(
-                                title: const Text('2. PIN Gerekli'),
+                                title: Text('enter_pin2'.tr()),
                                 content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                  const Text('Bir önceki PIN yanlış girildi. Devam etmek için 4 haneli 2. PIN\'i girin'),
+                                  Text('enter_pin2'.tr()),
                                   const SizedBox(height: 12),
                                   TextField(controller: pin2Ctrl, keyboardType: TextInputType.number, maxLength: 4, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                                 ]),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
-                                  FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pin2Ctrl.text, 2)), child: const Text('Onayla')),
+                                  FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pin2Ctrl.text, 2)), child: Text('save'.tr())),
                                 ],
                               ),
                             );
                             if (ok2 == true) {
                               await prefs.setBool('dev_mode_locked', false);
-                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kilit açıldı, tekrar deneyin'), backgroundColor: Colors.green));
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('all_cleared'.tr().contains('✓') ? 'Kilit açıldı' : 'Unlocked'), backgroundColor: Colors.green));
                             } else {
-                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış 2. PIN'), backgroundColor: Colors.red));
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('wrong_pin'.tr()), backgroundColor: Colors.red));
                             }
                             return;
                           }
@@ -1187,34 +1195,22 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               ),
                             );
                             if (approved != true) return;
-                            // Kırmızı bildirim (siyah yazı)
+                            // Kırmızı arka plan siyah yazı: TEST MODU AKTİF
                             try {
-                              final androidDetails = AndroidNotificationDetails(
-                                'dev_mode_channel',
-                                'Geliştirici Modu',
-                                channelDescription: 'Geliştirici modu uyarısı',
-                                importance: Importance.high,
-                                priority: Priority.high,
-                                color: const Color(0xFFFF0000),
-                                icon: '@mipmap/launcher_icon',
-                              );
                               await NotificationService.showCustom(
-                                title: 'DİKKAT: _GELİŞTİRİCİ_TEST_MODU:TRUE',
-                                body: 'Geliştirici modu aktif',
+                                title: 'notif_dev_title'.tr(),
+                                body: 'dev_mode_active_body'.tr(),
                                 color: Colors.red,
                               );
-                              // Alternatif: SnackBar ile de göster
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('DİKKAT: _GELİŞTİRİCİ_TEST_MODU:TRUE', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)), backgroundColor: Colors.red, duration: Duration(seconds: 4)));
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('notif_dev_title'.tr(), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800)), backgroundColor: Colors.red, duration: const Duration(seconds: 4)));
                               }
                             } catch (_) {}
-                            // Onaylandıysa mod aktif - sadece kırmızı bildirim (logo ile), ayarlar kaydedildi bildirimi yok
                             await prefs.setBool('dev_mode', true);
                             (c as Element).markNeedsBuild();
                           } else {
-                            // Yanlış PIN -> kilitle
                             await prefs.setBool('dev_mode_locked', true);
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN - Bir sonraki güncellemeye, silip yeniden yükleyene veya 2. PIN (1221) girilene kadar açılamaz'), backgroundColor: Colors.red, duration: Duration(seconds: 5)));
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('wrong_pin'.tr()), backgroundColor: Colors.red, duration: const Duration(seconds: 3)));
                           }
                         } else {
                           final p = await SharedPreferences.getInstance();

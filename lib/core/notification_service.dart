@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -16,7 +17,16 @@ class NotificationService {
     _inited = true;
   }
 
+  static Future<String> _lang() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getString('lang') ?? 'tr';
+    } catch (_) { return 'tr'; }
+  }
+
   static Future<void> showDownloadDone(String title, String path) async {
+    final lang = await _lang();
+    final notifTitle = lang == 'en' ? 'Video downloaded' : 'Video indirildi';
     const androidDetails = AndroidNotificationDetails(
       'download_channel',
       'İndirmeler',
@@ -24,18 +34,21 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/launcher_icon',
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const details = NotificationDetails(android: androidDetails);
-    await _plugin.show(0, 'Video indirildi', title, details, payload: path);
+    await _plugin.show(0, notifTitle, title, details, payload: path);
   }
 
   static Future<void> showUpdate(String version) async {
+    final lang = await _lang();
+    final title = lang == 'en' ? 'Update ready' : 'Güncelleme hazır';
+    final body = lang == 'en' ? 'Indir Gitsin $version downloaded, tap to install' : 'İndir Gitsin $version indirildi, kurmak için dokun';
     const androidDetails = AndroidNotificationDetails('update_channel', 'Güncellemeler', importance: Importance.high, priority: Priority.high, icon: '@mipmap/launcher_icon');
-    await _plugin.show(1, 'Güncelleme hazır', 'İndir Gitsin $version indirildi, kurmak için dokun', const NotificationDetails(android: androidDetails));
+    await _plugin.show(1, title, body, const NotificationDetails(android: androidDetails));
   }
 
   static Future<void> showCustom({required String title, required String body, Color? color}) async {
+    // Geliştirici modu: kırmızı arka plan siyah yazı için colorized
     final androidDetails = AndroidNotificationDetails(
       'dev_mode_channel',
       'Geliştirici Modu',
@@ -43,8 +56,8 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       color: color ?? const Color(0xFFFF0000),
+      colorized: true,
       icon: '@mipmap/launcher_icon',
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
       styleInformation: BigTextStyleInformation(body, htmlFormatBigText: true),
     );
     await _plugin.show(2, title, body, NotificationDetails(android: androidDetails));
