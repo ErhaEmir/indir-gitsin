@@ -120,7 +120,7 @@ class _PlanPageState extends State<PlanPage> {
             onSelect: ()=> _select(PlanType.unlimited),
           ),
           const SizedBox(height:16),
-          if (_isDev) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.green.withOpacity(0.2))), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.green, size:20), const SizedBox(width:8), Expanded(child: Text('Dev modu açık: Plus/Pro ve Sınırsız planlar test için seçilebilir', style: TextStyle(fontSize:12, color: Colors.green))]))) ,
+          if (_isDev) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.green.withOpacity(0.2))), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.green, size:20), const SizedBox(width:8), Expanded(child: Text('Dev modu açık: Plus/Pro ve Sınırsız planlar test için seçilebilir', style: TextStyle(fontSize:12, color: Colors.green)))])),
           const SizedBox(height:16),
           FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,snap){
             return OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.cancel_rounded, color: Colors.red), label: const Text('Planı İptal Et', style: TextStyle(color: Colors.red)), style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)));
