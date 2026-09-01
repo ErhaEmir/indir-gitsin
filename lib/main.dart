@@ -23,9 +23,12 @@ import 'core/download_service.dart';
 import 'core/app_update_service.dart';
 import 'core/storage_service.dart';
 import 'core/notification_service.dart';
+import 'core/subscription_service.dart';
 import 'features/player/player_page.dart';
 import 'features/player/network_player_page.dart';
 import 'features/explore/explore_page.dart';
+import 'features/plan/plan_page.dart';
+import 'features/market/market_page.dart';
 
 final youtubeServiceProvider = Provider((ref) => YoutubeService());
 final downloadServiceProvider = Provider((ref) => DownloadService());
@@ -36,6 +39,7 @@ Future<void> main() async {
   await EasyLocalization.ensureInitialized();
   await StorageService.init();
   await NotificationService.init();
+  await SubscriptionService.ensureInit();
   final prefs = await SharedPreferences.getInstance();
   final savedTheme = prefs.getString('theme_mode') ?? 'system';
   final savedLang = prefs.getString('lang');
@@ -119,9 +123,19 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _idx = 0;
   final _filesKey = GlobalKey<FilesTabState>();
   final _homeKey = GlobalKey<HomeTabState>();
+  Future<void> _checkPlanActive() async {
+    await SubscriptionService.ensureInit();
+    final active = await SubscriptionService.isPlanActive();
+    if (!active && mounted) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_)=> const PlanPage(mustSelect: true)));
+      setState((){});
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _checkPlanActive();
     _firstLaunchCheck();
     // Her açılışta güncelleme tara - varsa dialog ile sor
     Future.delayed(const Duration(seconds: 2), () async {
@@ -144,8 +158,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Daha sonra'.tr())),
             FilledButton(onPressed: () async {
               Navigator.pop(c);
-              // Direkt ayarlara götür (5 sekme: 0 Home,1 Keşfet,2 Dosyalar,3 Favoriler,4 Ayarlar)
-              setState(()=> _idx=4);
+              // Direkt ayarlara götür (6 sekme: 0 Home,1 Keşfet,2 Dosyalar,3 Favoriler,4 Market,5 Ayarlar)
+              setState(()=> _idx=5);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ayarlar > Güncellemeleri denetle ile yükleyebilirsin'), behavior: SnackBarBehavior.floating));
             }, child: Text('Güncelle'.tr())),
           ],
@@ -257,6 +271,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       ExplorePage(onSelect: (url){ _homeKey.currentState?.setLinkAndFetch(url); setState(()=> _idx=0); }),
       FilesTab(key: _filesKey),
       const FavoritesTab(),
+      const MarketPage(),
       const SettingsTab(),
     ];
     return Scaffold(
@@ -272,6 +287,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'explore'.tr()),
           NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
           NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
+          NavigationDestination(icon: const Icon(Icons.storefront_rounded), label: 'Market'),
           NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
         ],
       ),
@@ -495,6 +511,23 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
 
   Future<void> _download() async {
     if (_video == null || _selected == null) return;
+    // Kota kontrolü
+    final isAudio = _selected!.type == 'audioOnly';
+    bool can = isAudio ? await SubscriptionService.canDownloadAudio() : await SubscriptionService.canDownloadVideo();
+    if (!can) {
+      if (!mounted) return;
+      final kind = isAudio ? 'ses' : 'video';
+      await showDialog(context: context, builder: (c)=> AlertDialog(
+        title: Row(children: [Icon(Icons.block_rounded, color: Colors.red), const SizedBox(width:8), Text('Limit Doldu')]),
+        content: Text('Günlük $kind indirme limitine ulaştınız. İsterseniz planınızı yükseltin veya birikmiş coin\'lerinizle marketten hak satın alın.'),
+        actions: [
+          TextButton(onPressed: ()=> Navigator.pop(c), child: Text('Kapat'.tr())),
+          FilledButton(onPressed: (){ Navigator.pop(c); Navigator.push(context, MaterialPageRoute(builder: (_)=> const MarketPage())); }, child: const Text('Markete Git')),
+          FilledButton.tonalIcon(onPressed: (){ Navigator.pop(c); Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt')),
+        ],
+      ));
+      return;
+    }
     HapticFeedback.mediumImpact();
     setState(() { _downloading = true; _progress = 0; _error = null; });
     // ext catch bloğunda da lazım olduğu için try dışında tanımla
@@ -508,6 +541,9 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
         onProgress: (rx, total) { if (total > 0 && mounted) setState(() => _progress = rx / total); },
       );
       StorageService.addHistory({'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${_video!.id}', 'path': path, 'date': DateTime.now().toIso8601String()});
+      // Kota düş
+      if (isAudio) await SubscriptionService.consumeAudio(); else await SubscriptionService.consumeVideo();
+      if (mounted) setState((){});
       setState(() { _savedPath = path; _downloading = false; _progress = 1; });
       HapticFeedback.heavyImpact();
       // Bildirim (ayardan kapatılabilir)
@@ -564,6 +600,11 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
           const SizedBox(width: 8),
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
+        actions: [
+          FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c,s)=> Padding(padding: const EdgeInsets.only(top:8,bottom:8), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:16, height:16, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:16)), label: Text('${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:12))))),
+          const SizedBox(width:6),
+          Padding(padding: const EdgeInsets.only(right:8), child: FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt', style: TextStyle(fontSize:11, fontWeight: FontWeight.w800)))),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async { _clear(); FocusScope.of(context).unfocus(); },
@@ -600,9 +641,36 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                   Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.share_rounded, color: Colors.white, size:18)),
                   const SizedBox(width:10),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Arkadaşını davet et', style: const TextStyle(fontWeight: FontWeight.w800)), Text('İndir Gitsin\'i paylaş, herkes hızlı indirsin', style: TextStyle(color: Colors.grey[600], fontSize:11))])),
-                  FilledButton.tonalIcon(onPressed: () async { await Share.share('İndir Gitsin - YouTube & Music indirici https://github.com/ErhaEmir/indir-gitsin/releases'); }, icon: const Icon(Icons.send_rounded, size:16), label: const Text('Davet')),
+                  FilledButton.tonalIcon(onPressed: () async {
+                    await Share.share('İndir Gitsin - YouTube & Music indirici https://github.com/ErhaEmir/indir-gitsin/releases');
+                    final res = await SubscriptionService.doInvite();
+                    if (res=='coin' && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+30 Coin!'), backgroundColor: Colors.green));
+                    else if (res=='badge' && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rozet kazandın 🏅'), backgroundColor: Colors.deepPurple));
+                    setState((){});
+                  }, icon: const Icon(Icons.send_rounded, size:16), label: const Text('Davet')),
                 ])),
               ),
+              const SizedBox(height: 10),
+              // Kota kartı
+              FutureBuilder<Map<String,int>>(future: SubscriptionService.getRemaining(), builder: (c,snap){
+                final r = snap.data;
+                if (r==null) return const SizedBox();
+                final rv = r['video'] ?? 0; final ra = r['audio'] ?? 0; final lv = r['limitVideo'] ?? 0; final la = r['limitAudio'] ?? 0;
+                return FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c2,ps){
+                  final plan = ps.data ?? PlanType.free;
+                  return Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:14, height:14, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:14)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3)=> Text('${s3.data??0} Coin', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:12)))]),
+                    const SizedBox(height:8),
+                    Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.videocam_rounded, size:14), const SizedBox(width:4), Text('Video $rv / $lv kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: lv==0?0: (rv/lv).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99)) ])),
+                      const SizedBox(width:12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text('Ses $ra / $la kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: la==0?0: (ra/la).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
+                    ]),
+                    const SizedBox(height:6),
+                    Text('Kotalar her gün gece yarısı sıfırlanır', style: TextStyle(fontSize:10, color: Colors.grey[600])),
+                  ]));
+                });
+              }),
               const SizedBox(height: 12),
               // Arama (in-app YouTube search)
               const SizedBox(height: 4),
@@ -973,18 +1041,42 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     final mode = ref.watch(themeModeProvider);
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text('settings'.tr())),
+      appBar: AppBar(title: Text('settings'.tr()), actions: [
+        Padding(padding: const EdgeInsets.only(right:8), child: FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt', style: TextStyle(fontSize:11)))),
+      ]),
       body: ListView(padding: const EdgeInsets.fromLTRB(16,12,16,24), children: [
+        // Plan kartı
+        FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,snap){
+          final p = snap.data ?? PlanType.free;
+          return FutureBuilder<Map<String,int>>(future: SubscriptionService.getRemaining(), builder: (c2,s2){
+            final r = s2.data;
+            return Card(color: Colors.deepPurple.withOpacity(0.06), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.deepPurple, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.workspace_premium_rounded, color: Colors.white)), const SizedBox(width:10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mevcut Plan: ${p.name.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w900)), Text(r==null ? '' : 'Video ${r['video']}/${r['limitVideo']} • Ses ${r['audio']}/${r['limitAudio']}', style: TextStyle(color: Colors.grey[600], fontSize:12))])) , FilledButton(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, child: const Text('Değiştir'))]),
+              const SizedBox(height:8),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const MarketPage())); setState((){}); }, icon: const Icon(Icons.storefront_rounded), label: const Text('Markete Git'))),
+              FutureBuilder<bool>(future: SubscriptionService.isPlanActive(), builder: (c3,s3){
+                if (s3.data==false) return Padding(padding: const EdgeInsets.only(top:8), child: Text('Plan iptal edildi — yeni plan seçmelisin', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700, fontSize:12)));
+                return const SizedBox();
+              }),
+            ])));
+          });
+        }),
+        const SizedBox(height:12),
         // Tema kartı
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.palette_rounded, color: cs.primary)), const SizedBox(width: 10), Text('theme'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            ChoiceChip(label: Text('theme_system'.tr()), selected: mode=='system', onSelected: (_){ ref.read(themeModeProvider.notifier).state='system'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','system'));}),
-            ChoiceChip(label: Text('theme_light'.tr()), selected: mode=='light', onSelected: (_){ ref.read(themeModeProvider.notifier).state='light'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','light'));}),
-            ChoiceChip(label: Text('theme_dark'.tr()), selected: mode=='dark', onSelected: (_){ ref.read(themeModeProvider.notifier).state='dark'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','dark'));}),
-            ChoiceChip(label: Text('theme_amoled'.tr()), selected: mode=='amoled', avatar: const Icon(Icons.contrast_rounded, size:16), onSelected: (_){ ref.read(themeModeProvider.notifier).state='amoled'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','amoled'));}),
-          ]),
+          FutureBuilder<List<dynamic>>(future: Future.wait([SubscriptionService.getPlan(), SharedPreferences.getInstance()]), builder: (c,snap){
+            final plan = snap.data !=null ? snap.data![0] as PlanType : PlanType.free;
+            final isDev = snap.data !=null ? (snap.data![1] as SharedPreferences).getBool('dev_mode') ?? false : false;
+            final amoledLocked = !isDev && plan==PlanType.free;
+            return Wrap(spacing: 8, runSpacing: 8, children: [
+              ChoiceChip(label: Text('theme_system'.tr()), selected: mode=='system', onSelected: (_){ ref.read(themeModeProvider.notifier).state='system'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','system'));}),
+              ChoiceChip(label: Text('theme_light'.tr()), selected: mode=='light', onSelected: (_){ ref.read(themeModeProvider.notifier).state='light'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','light'));}),
+              ChoiceChip(label: Text('theme_dark'.tr()), selected: mode=='dark', onSelected: (_){ ref.read(themeModeProvider.notifier).state='dark'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','dark'));}),
+              Tooltip(message: amoledLocked ? 'Free planda kapalı — Plus/Pro veya Dev modunda açılır' : '', child: ChoiceChip(label: Text('theme_amoled'.tr()), selected: mode=='amoled', avatar: Icon(Icons.contrast_rounded, size:16, color: amoledLocked ? Colors.grey : null), onSelected: amoledLocked ? null : (_){ ref.read(themeModeProvider.notifier).state='amoled'; SharedPreferences.getInstance().then((p)=> p.setString('theme_mode','amoled'));}, disabledColor: Colors.grey[300], labelStyle: TextStyle(color: amoledLocked ? Colors.grey : null))),
+            ]);
+          }),
           const SizedBox(height: 8),
           Text('material_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         ]))),
@@ -1035,7 +1127,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Colors.orange)), const SizedBox(width: 10), Text('ease_of_use'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 8),
           FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (c,s){
-            final p=s.data; final autoClip = p?.getBool('auto_clipboard') ?? true;
+            final p=s.data;
+            final planStr = p?.getString('sub_plan') ?? 'free';
+            final isDev = p?.getBool('dev_mode') ?? false;
+            final isPremium = planStr=='plus' || planStr=='pro' || planStr=='unlimited' || isDev;
+            final autoClip = p?.getBool('auto_clipboard') ?? true;
             final vib = p?.getBool('haptic') ?? true;
             final notif = p?.getBool('notify_enabled') ?? true;
             final autoFolder = p?.getBool('auto_folder') ?? true;
@@ -1049,10 +1145,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 if(v) { await Permission.notification.request(); }
                 (c as Element).markNeedsBuild(); 
               }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: autoFolder, title: Text('auto_folder'.tr()), subtitle: Text('auto_folder_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
-              SwitchListTile(value: p?.getBool('auto_revoke') ?? false, title: Text('auto_revoke'.tr()), subtitle: Text('auto_revoke_desc'.tr(), style: const TextStyle(fontSize:12)), onChanged: (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_revoke', v); (c as Element).markNeedsBuild(); }, contentPadding: EdgeInsets.zero),
+              Opacity(opacity: isPremium?1:0.5, child: SwitchListTile(value: autoFolder, title: Text('auto_folder'.tr()), subtitle: Text(isPremium ? 'auto_folder_desc'.tr() : 'Premium — Plus/Pro ile açılır', style: const TextStyle(fontSize:12)), onChanged: isPremium ? (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_folder', v); (c as Element).markNeedsBuild(); } : null, contentPadding: EdgeInsets.zero)),
+              Opacity(opacity: isPremium?1:0.5, child: SwitchListTile(value: p?.getBool('auto_revoke') ?? false, title: Text('auto_revoke'.tr()), subtitle: Text(isPremium ? 'auto_revoke_desc'.tr() : 'Premium — Plus/Pro ile açılır', style: const TextStyle(fontSize:12)), onChanged: isPremium ? (v) async { final pr=await SharedPreferences.getInstance(); await pr.setBool('auto_revoke', v); (c as Element).markNeedsBuild(); } : null, contentPadding: EdgeInsets.zero)),
               const SizedBox(height: 8),
-              Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), Text('default_format'.tr(), style: const TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); })]),
+              Opacity(opacity: isPremium?1:0.5, child: Row(children: [const Icon(Icons.video_settings_rounded, size:16, color: Colors.grey), const SizedBox(width:6), Text(isPremium ? 'default_format'.tr() : 'Varsayılan format (Premium)', style: const TextStyle(fontSize:12, color: Colors.grey)), const Spacer(), DropdownButton<String>(value: defaultFormat, items: [DropdownMenuItem(value:'mp4', child: Text('MP4')), DropdownMenuItem(value:'mp3', child: Text('MP3')), DropdownMenuItem(value:'webm', child: Text('WEBM'))], onChanged: isPremium ? (v) async { if(v==null) return; final pr=await SharedPreferences.getInstance(); await pr.setString('default_format', v); (c as Element).markNeedsBuild(); } : null)])),
 
               const SizedBox(height: 4),
               SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
@@ -1212,8 +1308,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                         if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tüm veriler sıfırlandı')));
                       }),
                     ]),
+                    const SizedBox(height: 8),
+                    Text('Dev Coin & Plan Araçları', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.red[700], fontSize:13)),
+                    const SizedBox(height:6),
+                    FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c2,s2)=> Text('Mevcut Coin: ${s2.data??0}', style: const TextStyle(fontWeight: FontWeight.w800))),
+                    const SizedBox(height:6),
+                    Wrap(spacing:8, runSpacing:8, children: [
+                      FilledButton.icon(onPressed: () async { await SubscriptionService.addCoins(100); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+100 Coin'))); }, icon: const Icon(Icons.add_rounded), label: const Text('+100 Coin')),
+                      FilledButton.icon(onPressed: () async { await SubscriptionService.addCoins(1000); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+1000 Coin'))); }, icon: const Icon(Icons.add_rounded), label: const Text('+1000')),
+                      OutlinedButton.icon(onPressed: () async { await SubscriptionService.removeCoins(100); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('-100 Coin'))); }, icon: const Icon(Icons.remove_rounded), label: const Text('-100')),
+                      OutlinedButton.icon(onPressed: () async { await SubscriptionService.removeCoins(500); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.remove_rounded), label: const Text('-500')),
+                      FilledButton.tonalIcon(onPressed: () async { await SubscriptionService.selectPlan(PlanType.unlimited); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sınırsız Plan aktif'))); }, icon: const Icon(Icons.all_inclusive_rounded), label: const Text('Sınırsız Aktif')),
+                      OutlinedButton.icon(onPressed: () async { await SubscriptionService.selectPlan(PlanType.free); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.restart_alt_rounded), label: const Text('Free Yap')),
+                      FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.workspace_premium_rounded), label: const Text('Plan Seç')),
+                      FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const MarketPage())); }, icon: const Icon(Icons.storefront_rounded), label: const Text('Markete Git')),
+                    ]),
                     const SizedBox(height: 6),
-                    Text('Hata detayları artık 404 gibi teknik kodlarla gösterilecek', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+                    Text('Hata detayları artık 404 gibi teknik kodlarla gösterilecek + Plus/Pro ve sınırsız devde ücretsiz seçilebilir, tüm gri ayarlar açılır', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
                   ],
                 ]);
               },
