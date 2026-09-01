@@ -29,6 +29,7 @@ import 'features/player/network_player_page.dart';
 import 'features/explore/explore_page.dart';
 import 'features/plan/plan_page.dart';
 import 'features/market/market_page.dart';
+import 'features/splash/splash_page.dart';
 
 final youtubeServiceProvider = Provider((ref) => YoutubeService());
 final downloadServiceProvider = Provider((ref) => DownloadService());
@@ -106,7 +107,7 @@ class IndirGitsinApp extends ConsumerWidget {
           localizationsDelegates: context.localizationDelegates,
           supportedLocales: context.supportedLocales,
           locale: context.locale,
-          home: const MainScaffold(),
+          home: const SplashPage(child: MainScaffold()),
         );
       },
     );
@@ -123,6 +124,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _idx = 0;
   final _filesKey = GlobalKey<FilesTabState>();
   final _homeKey = GlobalKey<HomeTabState>();
+  final _marketKey = GlobalKey<MarketPageState>();
   Future<void> _checkPlanActive() async {
     await SubscriptionService.ensureInit();
     await SubscriptionService.enforcePlanRestrictions();
@@ -281,7 +283,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       ExplorePage(onSelect: (url){ _homeKey.currentState?.setLinkAndFetch(url); setState(()=> _idx=0); }),
       FilesTab(key: _filesKey),
       const FavoritesTab(),
-      const MarketPage(),
+      MarketPage(key: _marketKey),
       const SettingsTab(),
     ];
     return Scaffold(
@@ -298,6 +300,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           onDestinationSelected: (i) {
             setState(() => _idx = i);
             if (i==2) _filesKey.currentState?.refresh();
+            if (i==4) _marketKey.currentState?.refresh();
+            if (i==0) _homeKey.currentState?.refreshQuota();
           },
           destinations: [
             NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
@@ -607,6 +611,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
 
   void _clear() => setState(() { _linkCtrl.clear(); _video = null; _error = null; _savedPath = null; });
   void setLinkAndFetch(String url) { _linkCtrl.text = url; _fetch(); }
+  void refreshQuota() => setState(()=> _quotaVersion++);
 
   @override
   Widget build(BuildContext context) {
@@ -620,11 +625,6 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
         actions: [
-          FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,pSnap){
-            final isUnlimited = pSnap.data == PlanType.unlimited;
-            return FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c2,s)=> Padding(padding: const EdgeInsets.only(top:6,bottom:6), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:22, height:22, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:22, color: Colors.amber)), label: Text(isUnlimited ? '∞' : '${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal:6))));
-          }),
-          const SizedBox(width:4),
           Padding(padding: const EdgeInsets.only(right:8), child: FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt', style: TextStyle(fontSize:11, fontWeight: FontWeight.w800)))),
         ],
       ),
@@ -698,7 +698,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text(audioText, style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: progressA, minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
                     ]),
                     const SizedBox(height:6),
-                    Text('Kotalar her gün gece yarısı sıfırlanır', style: TextStyle(fontSize:10, color: Colors.grey[600])),
+                    Text('quota_reset'.tr(), style: TextStyle(fontSize:10, color: Colors.grey[600])),
                   ]));
                 });
               }),

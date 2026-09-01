@@ -33,7 +33,11 @@ class _ExplorePageState extends State<ExplorePage> {
 
   List<Map<String,dynamic>> _base = [];
   PlanType? _cachedPlan;
-  Future<void> _load() async {
+  Future<void> _load({bool force=false}) async {
+    if (force) {
+      _cache.remove(_cat);
+      if (_cat=='music') _base.clear();
+    }
     setState(()=> _loading=true);
     try {
       final plan = await SubscriptionService.getPlan();
@@ -44,36 +48,68 @@ class _ExplorePageState extends State<ExplorePage> {
       }
       _cachedPlan = plan;
 
-      if (_cache.containsKey(_cat) && _cache[_cat]!.isNotEmpty) {
+      if (!force && _cache.containsKey(_cat) && _cache[_cat]!.isNotEmpty) {
         _all = _cache[_cat]!;
         var list = List<Map<String,dynamic>>.from(_all);
-        while (list.length < limit && _base.isNotEmpty) {
+        // limit değiştiyse base ile doldur
+        if (list.length < limit && _base.isNotEmpty) {
           list = [...list, ..._base.take(limit - list.length)];
         }
-        if (list.length > limit) list.shuffle();
+        list.shuffle();
         _filtered = plan==PlanType.unlimited ? list : list.take(limit).toList();
         setState(()=> _loading=false);
         return;
       }
 
-      if (_base.isEmpty) {
-        _base = await YoutubeService().getTrendingMusic();
-        // yavaş değil — tek sefer fetch, sonra kategori türevleri local
-      }
-      List<Map<String,dynamic>> list = List<Map<String,dynamic>>.from(_base);
-      // kategori bazlı hızlı farklılaştırma (ağ yok)
-      if (_cat=='gaming') {
-        list = list.reversed.toList();
-      } else if (_cat=='news') {
-        list.sort((a,b)=> (b['views'] as int? ?? 0).compareTo(a['views'] as int? ?? 0));
-      } else if (_cat=='live') {
-        list.shuffle();
-        list = list..shuffle();
+      List<Map<String,dynamic>> list = [];
+      final svc = YoutubeService();
+      if (_cat=='music') {
+        if (_base.isEmpty) _base = await svc.getTrendingMusic();
+        list = List<Map<String,dynamic>>.from(_base);
       } else if (_cat=='trending') {
-        list.shuffle();
+        try {
+          final res = await svc.search('trending Turkey 2024');
+          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
+        } catch (_){}
+        if (list.isEmpty) {
+          if (_base.isEmpty) _base = await svc.getTrendingMusic();
+          list = List<Map<String,dynamic>>.from(_base);
+          list.shuffle();
+        }
+      } else if (_cat=='gaming') {
+        try {
+          final res = await svc.search('gaming Turkey');
+          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
+        } catch (_){}
+        if (list.isEmpty) {
+          if (_base.isEmpty) _base = await svc.getTrendingMusic();
+          list = List<Map<String,dynamic>>.from(_base).reversed.toList();
+        }
+      } else if (_cat=='news') {
+        try {
+          final res = await svc.search('haber gündem son dakika');
+          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
+        } catch (_){}
+        if (list.isEmpty) {
+          if (_base.isEmpty) _base = await svc.getTrendingMusic();
+          list = List<Map<String,dynamic>>.from(_base);
+          list.sort((a,b)=> (b['views'] as int? ?? 0).compareTo(a['views'] as int? ?? 0));
+        }
+      } else if (_cat=='live') {
+        try {
+          final res = await svc.search('canlı yayın live Turkey');
+          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
+        } catch (_){}
+        if (list.isEmpty) {
+          if (_base.isEmpty) _base = await svc.getTrendingMusic();
+          list = List<Map<String,dynamic>>.from(_base);
+        }
       }
-      list.shuffle(); // her kategori için farklı seed etkisi
-
+      list.shuffle();
+      // sınırsız için de limit kadar göster ama her refresh farklı
+      if (list.isEmpty) {
+        if (_base.isNotEmpty) list = List<Map<String,dynamic>>.from(_base);
+      }
       if (list.length < limit && list.isNotEmpty) {
         final extra = List<Map<String,dynamic>>.from(list);
         list = [...list, ...extra];
@@ -96,16 +132,17 @@ class _ExplorePageState extends State<ExplorePage> {
   @override
   Widget build(BuildContext context){
     return Scaffold(
-      appBar: AppBar(title: Text('explore'.tr()), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
+      appBar: AppBar(title: Text('explore'.tr()), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: ()=> _load(force:true))]),
       body: Column(children: [
         SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal:12, vertical:8), child: Row(children: _cats.map((c)=> Padding(padding: const EdgeInsets.only(right:8), child: ChoiceChip(label: Text(c.toUpperCase(), style: const TextStyle(fontSize:12, fontWeight: FontWeight.w700)), selected: _cat==c, onSelected: (_){ _onCat(c); })) ).toList())),
         FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,snap){
           final p = snap.data ?? PlanType.free;
           final lim = _limitForPlan(p);
-          return Padding(padding: const EdgeInsets.symmetric(horizontal:12), child: Row(children: [Icon(Icons.explore_rounded, size:14, color: Colors.grey[600]), const SizedBox(width:4), Text('${_filtered.length}/$lim video • ${_cat.toUpperCase()} • ${p.name.toUpperCase()}', style: TextStyle(color: Colors.grey[600], fontSize:11, fontWeight: FontWeight.w600)), const Spacer(), TextButton.icon(onPressed: _load, icon: const Icon(Icons.shuffle_rounded, size:16), label: const Text('Karıştır', style: TextStyle(fontSize:12)))]));
+          final label = p==PlanType.unlimited ? '${_filtered.length} video • ${_cat.toUpperCase()} • ∞' : '${_filtered.length}/$lim video • ${_cat.toUpperCase()} • ${p.name.toUpperCase()}';
+          return Padding(padding: const EdgeInsets.symmetric(horizontal:12), child: Row(children: [Icon(Icons.explore_rounded, size:14, color: Colors.grey[600]), const SizedBox(width:4), Text(label, style: TextStyle(color: Colors.grey[600], fontSize:11, fontWeight: FontWeight.w600)), const Spacer(), TextButton.icon(onPressed: ()=> _load(force:true), icon: const Icon(Icons.shuffle_rounded, size:16), label: Text('Karıştır'.tr(), style: TextStyle(fontSize:12)))]));
         }),
-        Expanded(child: _loading ? GridView.builder(padding: const EdgeInsets.all(12), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.78, crossAxisSpacing: 12, mainAxisSpacing: 12), itemCount: 6, itemBuilder: (_,i)=> Shimmer.fromColors(baseColor: Colors.grey[300]!, highlightColor: Colors.grey[100]!, child: Card(child: Container(height: 180, color: Colors.white)))) : _filtered.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.1), shape: BoxShape.circle), child: Icon(Icons.explore_rounded, size:48, color: Theme.of(context).colorScheme.primary)), const SizedBox(height:12), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w700)), const SizedBox(height:4), Text('Keşfet için internet gerekli, pull-to-refresh ile yenile', style: TextStyle(color: Colors.grey[500], fontSize:12)), const SizedBox(height:8), FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh_rounded), label: Text('retry'.tr()))])) : RefreshIndicator(
-          onRefresh: _load,
+        Expanded(child: _loading ? GridView.builder(padding: const EdgeInsets.all(12), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.78, crossAxisSpacing: 12, mainAxisSpacing: 12), itemCount: 6, itemBuilder: (_,i)=> Shimmer.fromColors(baseColor: Colors.grey[300]!, highlightColor: Colors.grey[100]!, child: Card(child: Container(height: 180, color: Colors.white)))) : _filtered.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.1), shape: BoxShape.circle), child: Icon(Icons.explore_rounded, size:48, color: Theme.of(context).colorScheme.primary)), const SizedBox(height:12), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w700)), const SizedBox(height:4), Text('Keşfet için internet gerekli, pull-to-refresh ile yenile'.tr(), style: TextStyle(color: Colors.grey[500], fontSize:12)), const SizedBox(height:8), FilledButton.icon(onPressed: ()=> _load(force:true), icon: const Icon(Icons.refresh_rounded), label: Text('retry'.tr()))])) : RefreshIndicator(
+          onRefresh: ()=> _load(force:true),
           child: GridView.builder(
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.78, crossAxisSpacing: 12, mainAxisSpacing: 12),

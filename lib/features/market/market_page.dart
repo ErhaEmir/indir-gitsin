@@ -6,10 +6,11 @@ import '../plan/plan_page.dart';
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key});
-  @override State<MarketPage> createState()=> _MarketPageState();
+  @override State<MarketPage> createState()=> MarketPageState();
 }
 
-class _MarketPageState extends State<MarketPage> {
+class MarketPageState extends State<MarketPage> {
+  Future<void> refresh() async => _load();
   int _coins = 0;
   Map<String,int> _remaining = {};
   PlanType _plan = PlanType.free;
