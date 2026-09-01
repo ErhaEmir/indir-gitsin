@@ -47,7 +47,8 @@ android {
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            // CI'da keystore yoksa debug ile imzala (Actions hatası düzeltmesi)
+            signingConfig keystoreProperties['keyAlias'] ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             shrinkResources false
         }
