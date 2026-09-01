@@ -276,20 +276,28 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     ];
     return Scaffold(
       body: IndexedStack(index: _idx, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _idx,
-        onDestinationSelected: (i) {
-          setState(() => _idx = i);
-          if (i==2) _filesKey.currentState?.refresh();
-        },
-        destinations: [
-          NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
-          NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'explore'.tr()),
-          NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
-          NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
-          NavigationDestination(icon: const Icon(Icons.storefront_rounded), label: 'Market'),
-          NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+          iconTheme: WidgetStateProperty.all(const IconThemeData(size: 22)),
+          height: 62,
+        ),
+        child: NavigationBar(
+          selectedIndex: _idx,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected: (i) {
+            setState(() => _idx = i);
+            if (i==2) _filesKey.currentState?.refresh();
+          },
+          destinations: [
+            NavigationDestination(icon: const Icon(Icons.home_rounded), label: 'home'.tr()),
+            NavigationDestination(icon: const Icon(Icons.explore_rounded), label: 'explore'.tr()),
+            NavigationDestination(icon: const Icon(Icons.folder_rounded), label: 'files'.tr()),
+            NavigationDestination(icon: const Icon(Icons.favorite_rounded), label: 'favorites'.tr()),
+            NavigationDestination(icon: const Icon(Icons.storefront_rounded), label: 'Market'),
+            NavigationDestination(icon: const Icon(Icons.settings_rounded), label: 'settings'.tr()),
+          ],
+        ),
       ),
     );
   }
@@ -601,8 +609,8 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
         actions: [
-          FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c,s)=> Padding(padding: const EdgeInsets.only(top:8,bottom:8), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:16, height:16, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:16)), label: Text('${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:12))))),
-          const SizedBox(width:6),
+          FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c,s)=> Padding(padding: const EdgeInsets.only(top:6,bottom:6), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:22, height:22, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:22, color: Colors.amber)), label: Text('${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal:6)))),
+          const SizedBox(width:4),
           Padding(padding: const EdgeInsets.only(right:8), child: FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt', style: TextStyle(fontSize:11, fontWeight: FontWeight.w800)))),
         ],
       ),
@@ -655,16 +663,17 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
               FutureBuilder<Map<String,int>>(future: SubscriptionService.getRemaining(), builder: (c,snap){
                 final r = snap.data;
                 if (r==null) return const SizedBox();
-                final rv = r['video'] ?? 0; final ra = r['audio'] ?? 0; final lv = r['limitVideo'] ?? 0; final la = r['limitAudio'] ?? 0;
+                final rv = r['video'] ?? 0; final ra = r['audio'] ?? 0; final lv = r['limitVideo'] ?? 0; final la = r['limitAudio'] ?? 0; final ev = r['extraVideo'] ?? 0; final ea = r['extraAudio'] ?? 0;
+                final totalV = lv + ev; final totalA = la + ea;
                 return FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c2,ps){
                   final plan = ps.data ?? PlanType.free;
                   return Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:14, height:14, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:14)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3)=> Text('${s3.data??0} Coin', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:12)))]),
+                    Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:20, height:20, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:20, color: Colors.amber)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3)=> Text('${s3.data??0} Coin', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)))]),
                     const SizedBox(height:8),
                     Row(children: [
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.videocam_rounded, size:14), const SizedBox(width:4), Text('Video $rv / $lv kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: lv==0?0: (rv/lv).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99)) ])),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.videocam_rounded, size:14), const SizedBox(width:4), Text(ev>0 ? 'Video $rv / $totalV kaldı ($lv+$ev)' : 'Video $rv / $lv kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: totalV==0?0: (rv/totalV).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99)) ])),
                       const SizedBox(width:12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text('Ses $ra / $la kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: la==0?0: (ra/la).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text(ea>0 ? 'Ses $ra / $totalA kaldı ($la+$ea)' : 'Ses $ra / $la kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: totalA==0?0: (ra/totalA).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
                     ]),
                     const SizedBox(height:6),
                     Text('Kotalar her gün gece yarısı sıfırlanır', style: TextStyle(fontSize:10, color: Colors.grey[600])),
@@ -993,11 +1002,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   int _interval = 6;
   bool _checking = false;
   String? _status;
-  // PIN doğrulama — düz metin yerine hash karşılaştırma (basit obscure, reverse engel)
+  // PIN doğrulama — hash obscure
   bool _verifyPin(String input, int which) {
     int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
-    if (which == 1) return h == 8922; // 192168 obscure
-    if (which == 2) return h == 509409; // 1221 obscure
+    if (which == 1) return h == 955227; // dev.32.eb
+    if (which == 2) return h == 182398; // 192.168
     return false;
   }
   @override void initState(){ super.initState(); _load(); }
@@ -1177,24 +1186,24 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                   Row(children: [
                     Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bug_report_rounded, color: Colors.deepPurple)),
                     const SizedBox(width: 10),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici Test Modu', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), Text('Sadece PIN bilenler açabilir', style: TextStyle(color: Colors.grey[600], fontSize: 11))])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Geliştirici Test Modu', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))])),
                     Switch(
                       value: isDev,
                       onChanged: (v) async {
                         final prefs = await SharedPreferences.getInstance();
                         final isLocked = prefs.getBool('dev_mode_locked') ?? false;
                         if (v) {
-                          // Eğer kilitliyse 2. PIN (1221) sor
+                          // Eğer kilitliyse 2. PIN sor
                           if (isLocked) {
                             final pin2Ctrl = TextEditingController();
                             final ok2 = await showDialog<bool>(
                               context: context,
                               builder: (d) => AlertDialog(
-                                title: const Text('2. PIN Gerekli'),
+                                title: const Text('PIN Gerekli'),
                                 content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                  const Text('Bir önceki PIN yanlış girildi. Devam etmek için 4 haneli 2. PIN\'i girin'),
+                                  const Text('Devam etmek için PIN girin'),
                                   const SizedBox(height: 12),
-                                  TextField(controller: pin2Ctrl, keyboardType: TextInputType.number, maxLength: 4, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
+                                  TextField(controller: pin2Ctrl, keyboardType: TextInputType.text, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                                 ]),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
@@ -1206,7 +1215,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               await prefs.setBool('dev_mode_locked', false);
                               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kilit açıldı, tekrar deneyin'), backgroundColor: Colors.green));
                             } else {
-                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış 2. PIN'), backgroundColor: Colors.red));
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red));
                             }
                             return;
                           }
@@ -1217,9 +1226,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             builder: (d) => AlertDialog(
                               title: const Text('PIN Girin'),
                               content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                const Text('Geliştirici modunu açmak için 6 haneli PIN girin'),
+                                const Text('Geliştirici modunu açmak için PIN girin'),
                                 const SizedBox(height: 12),
-                                TextField(controller: pinCtrl, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(hintText: '••••••', border: OutlineInputBorder()), obscureText: true),
+                                TextField(controller: pinCtrl, keyboardType: TextInputType.text, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                               ]),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
@@ -1275,7 +1284,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                           } else {
                             // Yanlış PIN -> kilitle
                             await prefs.setBool('dev_mode_locked', true);
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN - Bir sonraki güncellemeye, silip yeniden yükleyene veya 2. PIN (1221) girilene kadar açılamaz'), backgroundColor: Colors.red, duration: Duration(seconds: 5)));
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red, duration: Duration(seconds: 2)));
                           }
                         } else {
                           final p = await SharedPreferences.getInstance();

@@ -50,7 +50,7 @@ class _PlanPageState extends State<PlanPage> {
     }
   }
 
-  Widget _coinIcon({double size=18}){
+  Widget _coinIcon({double size=22}){
     return Image.asset('assets/icons/ig_coin.png', width:size, height:size, errorBuilder: (_,__,___)=> Icon(Icons.monetization_on_rounded, size:size, color: Colors.amber));
   }
 
@@ -120,7 +120,7 @@ class _PlanPageState extends State<PlanPage> {
             onSelect: ()=> _select(PlanType.unlimited),
           ),
           const SizedBox(height:16),
-          if (!_isDev) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.08), borderRadius: BorderRadius.circular(12)), child: Row(children: [const Icon(Icons.info_outline_rounded, color: Colors.orange, size:20), const SizedBox(width:8), Expanded(child: Text('Plus ve Pro planları şu anda satın alıma kapalı — Dev modunda test için açılabilir', style: TextStyle(fontSize:12, color: Colors.grey[700])))]) ),
+          if (_isDev) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.green.withOpacity(0.2))), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.green, size:20), const SizedBox(width:8), Expanded(child: Text('Dev modu açık: Plus/Pro ve Sınırsız planlar test için seçilebilir', style: TextStyle(fontSize:12, color: Colors.green))]))) ,
           const SizedBox(height:16),
           FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,snap){
             return OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.cancel_rounded, color: Colors.red), label: const Text('Planı İptal Et', style: TextStyle(color: Colors.red)), style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)));
@@ -133,12 +133,15 @@ class _PlanPageState extends State<PlanPage> {
   }
 
   Widget _planCard({required String title, required String price, required String video, required String audio, required String coin, required List<String> features, required Color color, required bool isCurrent, required bool isDisabled, String? disabledReason, required VoidCallback onSelect}){
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final subTextColor = isDark ? Colors.white70 : Colors.black87;
     return Container(
       margin: const EdgeInsets.only(bottom:12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isCurrent ? color : Colors.grey.withOpacity(0.2), width: isCurrent ? 2 : 1),
-        color: isDisabled ? Colors.grey.withOpacity(0.05) : (isCurrent ? color.withOpacity(0.06) : Theme.of(context).cardColor),
+        border: Border.all(color: isCurrent ? color : Colors.grey.withOpacity(0.25), width: isCurrent ? 2 : 1),
+        color: isDisabled ? (isDark ? Colors.white.withOpacity(0.06) : Colors.grey.withOpacity(0.06)) : (isCurrent ? color.withOpacity(isDark ? 0.18 : 0.08) : Theme.of(context).cardColor),
       ),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -153,19 +156,22 @@ class _PlanPageState extends State<PlanPage> {
           _badge(Icons.videocam_rounded, video), const SizedBox(width:8), _badge(Icons.music_note_rounded, audio),
         ]),
         const SizedBox(height:8),
-        Row(children: [ _coinIcon(size:16), const SizedBox(width:4), Text(coin, style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]),
+        Row(children: [ _coinIcon(size:22), const SizedBox(width:4), Text(coin, style: TextStyle(fontWeight: FontWeight.w800, fontSize:13, color: isDark ? Colors.amber[300] : Colors.black87))]),
         const SizedBox(height:8),
-        ...features.map((f)=> Padding(padding: const EdgeInsets.only(bottom:4), child: Row(children: [Icon(Icons.check_circle_rounded, size:14, color: isDisabled ? Colors.grey : color), const SizedBox(width:6), Expanded(child: Text(f, style: TextStyle(fontSize:12, color: isDisabled ? Colors.grey : Colors.black87))) ]))),
+        ...features.map((f)=> Padding(padding: const EdgeInsets.only(bottom:4), child: Row(children: [Icon(Icons.check_circle_rounded, size:14, color: isDisabled ? Colors.grey : color), const SizedBox(width:6), Expanded(child: Text(f, style: TextStyle(fontSize:12, fontWeight: FontWeight.w600, color: isDisabled ? Colors.grey : subTextColor))) ]))),
         const SizedBox(height:12),
         SizedBox(width: double.infinity, child: FilledButton(
           onPressed: isDisabled ? null : onSelect,
-          style: FilledButton.styleFrom(backgroundColor: isCurrent ? Colors.green : color, disabledBackgroundColor: Colors.grey[300], disabledForegroundColor: Colors.grey[600]),
+          style: FilledButton.styleFrom(backgroundColor: isCurrent ? Colors.green : color, disabledBackgroundColor: isDark ? Colors.white12 : Colors.grey[300], disabledForegroundColor: Colors.grey[500]),
           child: Text(isDisabled ? (disabledReason ?? 'Kapalı') : (isCurrent ? 'Seçili ✓' : 'Seç')),
         )),
-        if (isDisabled) Padding(padding: const EdgeInsets.only(top:6), child: Text(disabledReason ?? 'Dev modunda açılabilir', style: const TextStyle(fontSize:11, color: Colors.grey), textAlign: TextAlign.center)),
+        if (isDisabled) Padding(padding: const EdgeInsets.only(top:6), child: Text(disabledReason ?? 'Kapalı', style: TextStyle(fontSize:11, color: isDark ? Colors.white54 : Colors.grey), textAlign: TextAlign.center)),
       ])),
     );
   }
 
-  Widget _badge(IconData i, String t)=> Container(padding: const EdgeInsets.symmetric(horizontal:8, vertical:4), decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(99)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(i, size:14), const SizedBox(width:4), Text(t, style: const TextStyle(fontSize:11, fontWeight: FontWeight.w700))]));
+  Widget _badge(IconData i, String t){
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(padding: const EdgeInsets.symmetric(horizontal:8, vertical:4), decoration: BoxDecoration(color: isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.06), borderRadius: BorderRadius.circular(99)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(i, size:14, color: isDark ? Colors.white70 : Colors.black87), const SizedBox(width:4), Text(t, style: TextStyle(fontSize:11, fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87))]));
+  }
 }

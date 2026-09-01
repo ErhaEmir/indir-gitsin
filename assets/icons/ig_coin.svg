@@ -1,0 +1,31 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#FFF4C2"/>
+      <stop offset="40%" stop-color="#EBC75A"/>
+      <stop offset="75%" stop-color="#D4A017"/>
+      <stop offset="100%" stop-color="#8C6A0F"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B6F1A"/>
+      <stop offset="100%" stop-color="#C9A227"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="url(#g)" stroke="url(#ring)" stroke-width="16"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#8B6F1A" stroke-width="6" opacity="0.6"/>
+  <circle cx="256" cy="256" r="170" fill="#D4AF37" stroke="#7A5A10" stroke-width="3"/>
+  <!-- Arrow -->
+  <path d="M 210 140 L 210 230 L 175 230 L 256 340 L 337 230 L 302 230 L 302 140 Z" fill="#7A5A10" stroke="#5A4000" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Rocket -->
+  <g transform="translate(256 245) rotate(-45)">
+    <ellipse cx="22" cy="0" rx="42" ry="22" fill="#FFF8D6" stroke="#5A4000" stroke-width="4"/>
+    <circle cx="45" cy="0" r="10" fill="#EBC75A" stroke="#5A4000" stroke-width="3"/>
+    <path d="M -32 -14 L -55 -28 L -50 0 L -55 28 L -32 14" fill="#EBC75A" stroke="#5A4000" stroke-width="3"/>
+    <!-- flame -->
+    <path d="M -42 0 L -62 -12 L -58 0 L -62 12 Z" fill="#FF6B00" opacity="0.9"/>
+  </g>
+  <text x="256" y="395" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="52" font-weight="900" fill="#5A4000" stroke="#FFF4C2" stroke-width="1">iG</text>
+  <text x="256" y="96" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="900" fill="#5A4000" letter-spacing="8">INDIR</text>
+  <text x="256" y="470" text-anchor="middle" font-family="Arial, sans-serif" font-size="50" font-weight="900" fill="#5A4000" letter-spacing="12">COIN</text>
+  <text x="340" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="900" fill="#5A4000">GITSIN</text>
+</svg>

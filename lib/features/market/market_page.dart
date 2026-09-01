@@ -29,16 +29,16 @@ class _MarketPageState extends State<MarketPage> {
     setState((){ _coins=c; _remaining=r; _plan=p; _inviteCnt=ic; _hasBadge=badge; _isDev = prefs.getBool('dev_mode') ?? false; });
   }
 
-  Widget _coinIcon({double s=20})=> Image.asset('assets/icons/ig_coin.png', width:s, height:s, errorBuilder: (_,__,___)=> Icon(Icons.monetization_on_rounded, size:s, color: Colors.amber[700]));
+  Widget _coinIcon({double s=22})=> Image.asset('assets/icons/ig_coin.png', width:s, height:s, errorBuilder: (_,__,___)=> Icon(Icons.monetization_on_rounded, size:s, color: Colors.amber[700]));
 
   @override Widget build(BuildContext context){
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Market'), actions: [Padding(padding: const EdgeInsets.only(right:12), child: Chip(avatar: _coinIcon(s:18), label: Text('$_coins', style: const TextStyle(fontWeight: FontWeight.w800)), backgroundColor: Colors.amber.withOpacity(0.2)))]),
+      appBar: AppBar(title: const Text('Market'), actions: [Padding(padding: const EdgeInsets.only(right:12), child: Chip(avatar: _coinIcon(s:22), label: Text('$_coins', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), backgroundColor: Colors.amber.withOpacity(0.2), padding: const EdgeInsets.symmetric(horizontal:6)))]),
       body: RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16,12,16,24), children: [
         // Coin + plan banner
         Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.amber[700]!, Colors.orange[600]!]), borderRadius: BorderRadius.circular(20)), child: Row(children: [
-          _coinIcon(s:36),
+          _coinIcon(s:42),
           const SizedBox(width:12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('$_coins Coin', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize:18)),
@@ -86,13 +86,15 @@ class _MarketPageState extends State<MarketPage> {
             // Kullanıcı paylaştıktan sonra coin ver
             // Not: share result ignored, direkt davet say
           }, icon: const Icon(Icons.send_rounded), label: const Text('Davet Et'))),
-          const SizedBox(height:6),
-          SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
-            final what = await SubscriptionService.doInvite();
-            await _load();
-            if (what=='coin' && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+30 Coin eklendi!'), backgroundColor: Colors.green));
-            if (what=='badge' && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rozet kazandın 🏅 (limit doldu)'), backgroundColor: Colors.deepPurple));
-          }, icon: const Icon(Icons.person_add_rounded), label: Text(_inviteCnt <10 ? 'Simüle: Davet say (+30)' : 'Simüle: Rozet al'))),
+          if (_isDev) ...[
+            const SizedBox(height:6),
+            SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () async {
+              final what = await SubscriptionService.doInvite();
+              await _load();
+              if (what=='coin' && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+30 Coin eklendi!'), backgroundColor: Colors.green));
+              if (what=='badge' && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rozet kazandın 🏅 (limit doldu)'), backgroundColor: Colors.deepPurple));
+            }, icon: const Icon(Icons.person_add_rounded), label: Text(_inviteCnt <10 ? 'Simüle: Davet say (+30)' : 'Simüle: Rozet al'))),
+          ],
         ]))),
         if (_isDev) ...[
           const SizedBox(height:12),
@@ -115,11 +117,11 @@ class _MarketPageState extends State<MarketPage> {
 
   Widget _buyCard({required String title, required String price, required IconData icon, required VoidCallback onBuy}){
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
-      Icon(icon, size:28, color: Theme.of(context).colorScheme.primary),
+      Icon(icon, size:30, color: Theme.of(context).colorScheme.primary),
       const SizedBox(height:6),
       Text(title, style: const TextStyle(fontWeight: FontWeight.w800), textAlign: TextAlign.center),
       const SizedBox(height:4),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [_coinIcon(s:14), const SizedBox(width:4), Text(price, style: const TextStyle(fontWeight: FontWeight.w700))]),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [_coinIcon(s:20), const SizedBox(width:4), Text(price, style: const TextStyle(fontWeight: FontWeight.w800, fontSize:14))]),
       const SizedBox(height:8),
       SizedBox(width: double.infinity, child: FilledButton(onPressed: onBuy, child: const Text('Al'))),
     ])));
