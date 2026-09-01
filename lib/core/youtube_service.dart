@@ -207,6 +207,41 @@ class YoutubeService {
     return [];
   }
 
+  Future<VideoInfo?> _getPipedVideoInfo(String videoId) async {
+    final streams = await _getPipedStreams(videoId);
+    if (streams.isEmpty) return null;
+    for (final mirror in _pipedMirrors) {
+      try {
+        final r = await _dio.get('$mirror/streams/$videoId', options: Options(headers: {'User-Agent': 'Mozilla/5.0'}, receiveTimeout: const Duration(seconds: 5), sendTimeout: const Duration(seconds: 5)));
+        if (r.statusCode == 200) {
+          final data = r.data as Map<String, dynamic>;
+          final title = data['title'] as String? ?? 'Video $videoId';
+          final author = data['uploader'] as String? ?? data['uploaderName'] as String? ?? 'Unknown';
+          final channelId = data['uploaderUrl'] as String? ?? '';
+          final thumb = data['thumbnailUrl'] as String? ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+          final desc = data['description'] as String? ?? '';
+          final views = data['views'] as int?;
+          // duration saniye
+          final durSec = data['duration'] as int?;
+          return VideoInfo(
+            id: videoId,
+            title: title,
+            author: author,
+            channelId: channelId,
+            duration: durSec != null ? Duration(seconds: durSec) : null,
+            thumbnailUrl: thumb,
+            description: desc,
+            viewCount: views,
+            uploadDate: null,
+            streams: streams,
+          );
+        }
+      } catch (_) { continue; }
+    }
+    // en azından streams ile basit VideoInfo döndür
+    return VideoInfo(id: videoId, title: 'Video $videoId', author: 'Unknown', channelId: '', duration: null, thumbnailUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg', description: '', viewCount: null, uploadDate: null, streams: streams);
+  }
+
   // Trend (Keşfet) - YouTube Music Top 100 için Piped + youtube_explode fallback
   Future<List<Map<String, dynamic>>> getTrending() async => getTrendingMusic();
 
@@ -283,6 +318,15 @@ class YoutubeService {
       }
     }
     if (video == null || manifest == null) {
+      // Piped fallback — sunucu dolu / YouTube throttling durumunda bile çalışsın
+      try {
+        final pipedFallback = await _getPipedVideoInfo(videoId);
+        if (pipedFallback != null) {
+          _cache[videoId] = pipedFallback;
+          _cacheAt[videoId] = DateTime.now();
+          return pipedFallback;
+        }
+      } catch (_) {}
       if (lastErr != null && lastErr.contains('VideoUnavailable')) throw Exception('Video bulunamadı veya gizli. Kendi videon ise gizlilik ayarını Herkese Açık yapıp tekrar dene.');
       if (lastErr != null && lastErr.contains('Requires login')) throw Exception('Bu video giriş gerektiriyor. YouTube Music/özel videolarda bazen olur, herkese açık bir link dene.');
       if (lastErr != null && (lastErr.contains('Timeout') || lastErr.contains('Socket'))) throw Exception('Bağlantı yavaş, tekrar dene (sunucu yoğun olabilir). Farklı kalite seçmeyi dene.');
