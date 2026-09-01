@@ -151,11 +151,11 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled) return;
-      // Aralığa göre kontrol et
-      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      int intervalMinutes = prefs.getInt('update_interval_minutes') ?? -1;
+      if (intervalMinutes==-1) intervalMinutes = (prefs.getInt('update_interval_hours') ?? 6)*60;
       final last = prefs.getInt('last_update_check') ?? 0;
-      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
-      if (hoursPassed < intervalHours) return;
+      final minutesPassed = (DateTime.now().millisecondsSinceEpoch - last) / 60000;
+      if (minutesPassed < intervalMinutes) return;
       final res = await AppUpdateService().checkForUpdateManual();
       if (res!=null && res['hasUpdate']==true && mounted) {
         final current = res['current'];
@@ -175,15 +175,16 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         ));
       }
     });
-    // Periyodik kontrol - ayardaki aralığa göre
-    Timer.periodic(const Duration(hours: 1), (_) async {
+    // Periyodik kontrol - ayardaki aralığa göre (1 dk granularity)
+    Timer.periodic(const Duration(minutes: 1), (_) async {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('auto_update_enabled') ?? true;
       if (!enabled) return;
-      final intervalHours = prefs.getInt('update_interval_hours') ?? 6;
+      int intervalMinutes = prefs.getInt('update_interval_minutes') ?? -1;
+      if (intervalMinutes==-1) intervalMinutes = (prefs.getInt('update_interval_hours') ?? 6)*60;
       final last = prefs.getInt('last_update_check') ?? 0;
-      final hoursPassed = (DateTime.now().millisecondsSinceEpoch - last) / (1000*3600);
-      if (hoursPassed >= intervalHours) AppUpdateService().checkAndUpdateSilently();
+      final minutesPassed = (DateTime.now().millisecondsSinceEpoch - last) / 60000;
+      if (minutesPassed >= intervalMinutes) AppUpdateService().checkAndUpdateSilently();
     });
   }
 
@@ -1020,9 +1021,15 @@ class FavoritesTab extends StatelessWidget { const FavoritesTab({super.key}); @o
 class SettingsTab extends ConsumerStatefulWidget { const SettingsTab({super.key}); @override ConsumerState<SettingsTab> createState()=> _SettingsTabState();}
 class _SettingsTabState extends ConsumerState<SettingsTab> {
   bool _autoUpdate = true;
-  int _interval = 6;
+  int _interval = 360; // dakika
   bool _checking = false;
   String? _status;
+  String _formatInterval(int m){
+    if (m==1) return 'instant'.tr() + ' (1 ' + 'minute'.tr() + ')';
+    if (m<60) return '$m ' + 'minutes'.tr();
+    if (m%60==0) return '${m~/60} ' + (m==60 ? 'hour'.tr() : 'hours'.tr());
+    return '${m~/60}h ${m%60}m';
+  }
   // Şifre doğrulama — hash obscure
   bool _verifyPin(String input, int which) {
     int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
@@ -1031,7 +1038,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     return false;
   }
   @override void initState(){ super.initState(); _load(); }
-  Future<void> _load() async { final p=await SharedPreferences.getInstance(); setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = p.getInt('update_interval_hours') ?? 6 }); }
+  Future<void> _load() async {
+    final p=await SharedPreferences.getInstance();
+    int mins = p.getInt('update_interval_minutes') ?? -1;
+    if (mins==-1) mins = (p.getInt('update_interval_hours') ?? 6)*60;
+    setState(()=> { _autoUpdate = p.getBool('auto_update_enabled') ?? true, _interval = mins });
+  }
   Future<void> _toggleAuto(bool v) async { setState(()=> _autoUpdate=v); final p=await SharedPreferences.getInstance(); await p.setBool('auto_update_enabled', v); }
   Future<void> _manualCheck() async {
     setState(()=> _checking=true);
@@ -1125,7 +1137,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.green.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.system_update_rounded, color: Colors.green)), const SizedBox(width: 10), Text('auto_update'.tr(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 4),
-          Text('auto_update_desc'.tr(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text('Yeni sürüm çıkınca otomatik indirir ve kurulumu başlatır (arka planda ${_formatInterval(_interval)} kontrol)', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 12),
           SwitchListTile(value: _autoUpdate, title: Text(_autoUpdate ? 'auto_on'.tr() : 'auto_off'.tr()), subtitle: Text(_autoUpdate ? 'auto_on_desc'.tr() : 'auto_off_desc'.tr()), onChanged: _toggleAuto, contentPadding: EdgeInsets.zero),
           if (_autoUpdate) ...[
@@ -1139,12 +1151,34 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                 value: _interval,
                 underline: Container(height:1, color: Colors.grey[300]),
                 items: [
-                  DropdownMenuItem(value: 1, child: Text('1 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 6, child: Text('6 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 12, child: Text('12 ' + 'hour'.tr())),
-                  DropdownMenuItem(value: 24, child: Text('24 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 1, child: Text('instant'.tr())),
+                  DropdownMenuItem(value: 5, child: Text('5 ' + 'minutes'.tr())),
+                  DropdownMenuItem(value: 10, child: Text('10 ' + 'minutes'.tr())),
+                  DropdownMenuItem(value: 30, child: Text('30 ' + 'minutes'.tr())),
+                  DropdownMenuItem(value: 60, child: Text('1 ' + 'hour'.tr())),
+                  DropdownMenuItem(value: 180, child: Text('3 ' + 'hours'.tr())),
+                  DropdownMenuItem(value: 360, child: Text('6 ' + 'hours'.tr())),
+                  DropdownMenuItem(value: 720, child: Text('12 ' + 'hours'.tr())),
+                  DropdownMenuItem(value: 1440, child: Text('24 ' + 'hours'.tr())),
                 ],
-                onChanged: (v) async { if(v==null) return; final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_hours', v); setState(()=> _interval=v); },
+                onChanged: (v) async {
+                  if(v==null) return;
+                  if (v < 60) {
+                    final ok = await showDialog<bool>(context: context, builder: (c)=> AlertDialog(
+                      title: Row(children: [const Icon(Icons.battery_alert_rounded, color: Colors.orange), const SizedBox(width:8), Text('battery_warning_title'.tr())]),
+                      content: Text('battery_warning_desc'.tr()),
+                      actions: [
+                        TextButton(onPressed: ()=> Navigator.pop(c,false), child: Text('cancel'.tr())),
+                        FilledButton(onPressed: ()=> Navigator.pop(c,true), child: Text('confirm'.tr())),
+                      ],
+                    ));
+                    if (ok != true) {
+                      // iptal -> 6 saate dön
+                      final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_minutes', 360); setState(()=> _interval=360); return;
+                    }
+                  }
+                  final p=await SharedPreferences.getInstance(); await p.setInt('update_interval_minutes', v); await p.remove('update_interval_hours'); setState(()=> _interval=v);
+                },
               ),
             ]),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../core/youtube_service.dart';
 import '../../core/subscription_service.dart';
 
@@ -26,20 +27,31 @@ class _ExplorePageState extends State<ExplorePage> {
       case PlanType.free: return 30;
       case PlanType.plus: return 40;
       case PlanType.pro: return 100;
-      case PlanType.unlimited: return 150;
+      case PlanType.unlimited: return 999;
     }
   }
 
   List<Map<String,dynamic>> _base = [];
+  PlanType? _cachedPlan;
   Future<void> _load() async {
     setState(()=> _loading=true);
     try {
       final plan = await SubscriptionService.getPlan();
       final limit = _limitForPlan(plan);
+      if (_cachedPlan != null && _cachedPlan != plan) {
+        _cache.clear();
+        _base.clear();
+      }
+      _cachedPlan = plan;
 
       if (_cache.containsKey(_cat) && _cache[_cat]!.isNotEmpty) {
         _all = _cache[_cat]!;
-        _filtered = _all.take(limit).toList();
+        var list = List<Map<String,dynamic>>.from(_all);
+        while (list.length < limit && _base.isNotEmpty) {
+          list = [...list, ..._base.take(limit - list.length)];
+        }
+        if (list.length > limit) list.shuffle();
+        _filtered = plan==PlanType.unlimited ? list : list.take(limit).toList();
         setState(()=> _loading=false);
         return;
       }
@@ -69,7 +81,7 @@ class _ExplorePageState extends State<ExplorePage> {
       }
       _cache[_cat] = list;
       _all = list;
-      _filtered = _all.take(limit).toList();
+      _filtered = plan==PlanType.unlimited ? list : list.take(limit).toList();
     } catch(e){
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${'trending_load_failed'.tr()}: $e')));
     }
@@ -92,7 +104,7 @@ class _ExplorePageState extends State<ExplorePage> {
           final lim = _limitForPlan(p);
           return Padding(padding: const EdgeInsets.symmetric(horizontal:12), child: Row(children: [Icon(Icons.explore_rounded, size:14, color: Colors.grey[600]), const SizedBox(width:4), Text('${_filtered.length}/$lim video • ${_cat.toUpperCase()} • ${p.name.toUpperCase()}', style: TextStyle(color: Colors.grey[600], fontSize:11, fontWeight: FontWeight.w600)), const Spacer(), TextButton.icon(onPressed: _load, icon: const Icon(Icons.shuffle_rounded, size:16), label: const Text('Karıştır', style: TextStyle(fontSize:12)))]));
         }),
-        Expanded(child: _loading ? const Center(child: CircularProgressIndicator()) : _filtered.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.explore_rounded, size:48, color: Colors.grey), const SizedBox(height:8), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600])), TextButton(onPressed: _load, child: Text('retry'.tr()))])) : RefreshIndicator(
+        Expanded(child: _loading ? GridView.builder(padding: const EdgeInsets.all(12), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.78, crossAxisSpacing: 12, mainAxisSpacing: 12), itemCount: 6, itemBuilder: (_,i)=> Shimmer.fromColors(baseColor: Colors.grey[300]!, highlightColor: Colors.grey[100]!, child: Card(child: Container(height: 180, color: Colors.white)))) : _filtered.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.1), shape: BoxShape.circle), child: Icon(Icons.explore_rounded, size:48, color: Theme.of(context).colorScheme.primary)), const SizedBox(height:12), Text('trending_load_failed'.tr(), style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w700)), const SizedBox(height:4), Text('Keşfet için internet gerekli, pull-to-refresh ile yenile', style: TextStyle(color: Colors.grey[500], fontSize:12)), const SizedBox(height:8), FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh_rounded), label: Text('retry'.tr()))])) : RefreshIndicator(
           onRefresh: _load,
           child: GridView.builder(
             padding: const EdgeInsets.all(12),
