@@ -34,15 +34,15 @@ class _MarketPageState extends State<MarketPage> {
   @override Widget build(BuildContext context){
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Market'), actions: [Padding(padding: const EdgeInsets.only(right:12), child: Chip(avatar: _coinIcon(s:22), label: Text('$_coins', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), backgroundColor: Colors.amber.withOpacity(0.2), padding: const EdgeInsets.symmetric(horizontal:6)))]),
+      appBar: AppBar(title: const Text('Market'), actions: [Padding(padding: const EdgeInsets.only(right:12), child: Chip(avatar: _coinIcon(s:22), label: Text(_plan==PlanType.unlimited ? '∞' : '$_coins', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), backgroundColor: Colors.amber.withOpacity(0.2), padding: const EdgeInsets.symmetric(horizontal:6)))]),
       body: RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16,12,16,24), children: [
         // Coin + plan banner
         Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.amber[700]!, Colors.orange[600]!]), borderRadius: BorderRadius.circular(20)), child: Row(children: [
           _coinIcon(s:42),
           const SizedBox(width:12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('$_coins Coin', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize:18)),
-            Text('Plan: ${_plan.name.toUpperCase()} • ${_remaining['video']??0} video / ${_remaining['audio']??0} ses kaldı', style: const TextStyle(color: Colors.white, fontSize:12)),
+            Text(_plan==PlanType.unlimited ? '∞ Coin' : '$_coins Coin', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize:18)),
+            Text(_plan==PlanType.unlimited ? 'Plan: UNLIMITED • ∞ / ∞' : 'Plan: ${_plan.name.toUpperCase()} • ${_remaining['video']??0} video / ${_remaining['audio']??0} ses kaldı', style: const TextStyle(color: Colors.white, fontSize:12)),
           ])),
           FilledButton(onPressed: ()=> Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())), style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.orange[700]), child: const Text('Planı Yükselt')),
         ])),

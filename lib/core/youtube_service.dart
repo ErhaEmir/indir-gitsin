@@ -110,51 +110,49 @@ class YoutubeService {
     return out;
   }
 
-  // Arama — önce Piped fallback (hızlı), sonra explode
+  // Arama — Piped paralel (hızlı) + explode fallback
   Future<List<VideoInfo>> search(String query) async {
-    // 1) Piped search dene (4 mirror)
-    for (final mirror in _pipedMirrors) {
-      try {
-        final r = await _dio.get('$mirror/search', queryParameters: {'q': query, 'filter': 'videos'}, options: Options(receiveTimeout: const Duration(seconds: 5), sendTimeout: const Duration(seconds: 5), headers: {'User-Agent': 'Mozilla/5.0'}));
-        if (r.statusCode == 200) {
-          final data = r.data;
-          final List items = data is Map ? (data['items'] as List? ?? data['videos'] as List? ?? []) : (data as List? ?? []);
-          final ids = items.map((e) => (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first).where((id) => id.length==11).take(8).toList();
-          if (ids.isNotEmpty) {
-            final out = <VideoInfo>[];
-            for (int i = 0; i < ids.length; i += 2) {
-              final batch = ids.skip(i).take(2).toList();
-              final results = await Future.wait(batch.map((id) async {
-                try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
-              }));
-              for (final x in results) { if (x != null) out.add(x); }
-            }
-            if (out.isNotEmpty) return out;
-            // Piped sonuçlarını direkt VideoInfo olmadan da döndür (hızlı önizleme)
-            if (items.isNotEmpty) {
-              // Fallback: Piped verisinden sentetik VideoInfo
-              return items.take(8).map((e){
-                final id = (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first;
-                return VideoInfo(id: id, title: e['title'] ?? 'Video', author: e['uploaderName'] ?? e['uploader'] ?? '', channelId: '', duration: null, thumbnailUrl: e['thumbnail'] ?? '', description: '', viewCount: e['views'] as int?, uploadDate: null, streams: []);
-              }).where((v)=> v.id.length==11 && v.streams.isEmpty==false || v.id.length==11).toList();
-            }
-          }
-        }
-      } catch (_) { continue; }
-    }
-    // 2) YoutubeExplode fallback
+    // 1) Piped paralel — ilk dönen kazanır (3s)
     try {
-      final res = await _yt.search.search(query).timeout(const Duration(seconds: 8));
-      final ids = res.whereType<Video>().take(8).map((e) => e.id.value).toList();
-      final out = <VideoInfo>[];
-      for (int i = 0; i < ids.length; i += 2) {
-        final batch = ids.skip(i).take(2).toList();
-        final results = await Future.wait(batch.map((id) async {
-          try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 6)); } catch (_) { return null; }
-        }));
-        for (final r in results) { if (r != null) out.add(r); }
+      final futures = _pipedMirrors.map((mirror) async {
+        try {
+          final r = await _dio.get('$mirror/search', queryParameters: {'q': query, 'filter': 'videos'}, options: Options(receiveTimeout: const Duration(seconds: 3), sendTimeout: const Duration(seconds: 3), headers: {'User-Agent': 'Mozilla/5.0'}));
+          if (r.statusCode == 200) {
+            final data = r.data;
+            final List items = data is Map ? (data['items'] as List? ?? data['videos'] as List? ?? []) : (data as List? ?? []);
+            if (items.isNotEmpty) return items;
+          }
+        } catch (_) {}
+        return null;
+      }).toList();
+      // 3 saniyede ilk başarılı
+      List? pipedItems;
+      try {
+        final res = await Future.any(futures.map((f)=> f.timeout(const Duration(seconds: 4)))).timeout(const Duration(seconds: 4));
+        if (res != null) pipedItems = res as List;
+      } catch (_) {
+        // fallback bekle hepsi
+        final all = await Future.wait(futures);
+        pipedItems = all.firstWhere((e)=> e!=null, orElse: ()=> null) as List?;
       }
-      if (out.isNotEmpty) return out;
+      if (pipedItems != null && pipedItems.isNotEmpty) {
+        // Piped verisinden sentetik VideoInfo direkt döndür — çok hızlı, ek getVideoInfo yok
+        return pipedItems.take(8).map((e){
+          final id = (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first;
+          final thumb = e['thumbnail'] ?? e['thumbnailUrl'] ?? (id.length==11 ? 'https://i.ytimg.com/vi/$id/hqdefault.jpg' : '');
+          return VideoInfo(id: id, title: e['title'] ?? 'Video', author: e['uploaderName'] ?? e['uploader'] ?? '', channelId: '', duration: null, thumbnailUrl: thumb, description: '', viewCount: e['views'] as int?, uploadDate: null, streams: [StreamOption(tag: 'piped-search', qualityLabel: 'Hızlı Önizleme', container: 'mp4', sizeLabel: '', type: 'muxed', url: 'https://www.youtube.com/watch?v=$id')]);
+        }).where((v)=> v.id.length==11).toList();
+      }
+    } catch (_) {}
+    // 2) YoutubeExplode fallback (yavaş ama garantili)
+    try {
+      final res = await _yt.search.search(query).timeout(const Duration(seconds: 6));
+      final ids = res.whereType<Video>().take(6).map((e) => e.id.value).toList();
+      // getVideoInfo yerine direkt sentetik döndür (hız için)
+      return ids.map((id) {
+        final v = res.whereType<Video>().firstWhere((e)=> e.id.value==id);
+        return VideoInfo(id: id, title: v.title, author: v.author, channelId: v.channelId.value, duration: v.duration, thumbnailUrl: v.thumbnails.highResUrl, description: v.description, viewCount: v.engagement.viewCount, uploadDate: v.uploadDate, streams: [StreamOption(tag: 'search', qualityLabel: 'Önizleme', container: 'mp4', sizeLabel: '', type: 'muxed', url: 'https://www.youtube.com/watch?v=$id')]);
+      }).toList();
     } catch (_) {}
     return [];
   }

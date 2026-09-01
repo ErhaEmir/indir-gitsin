@@ -338,6 +338,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
   Timer? _debounce;
   late AnimationController _heroCtrl;
   late Animation<double> _heroAnim;
+  int _quotaVersion = 0;
 
   @override
   void initState() {
@@ -560,7 +561,7 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
       StorageService.addHistory({'id': _video!.id, 'title': _video!.title, 'thumbnail': _video!.thumbnailUrl, 'url': 'https://www.youtube.com/watch?v=${_video!.id}', 'path': path, 'date': DateTime.now().toIso8601String()});
       // Kota düş
       if (isAudio) await SubscriptionService.consumeAudio(); else await SubscriptionService.consumeVideo();
-      if (mounted) setState((){});
+      if (mounted) setState(()=> _quotaVersion++);
       setState(() { _savedPath = path; _downloading = false; _progress = 1; });
       HapticFeedback.heavyImpact();
       // Bildirim (ayardan kapatılabilir)
@@ -618,7 +619,10 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
           Text('İndir Gitsin'.tr(), style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
         actions: [
-          FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c,s)=> Padding(padding: const EdgeInsets.only(top:6,bottom:6), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:22, height:22, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:22, color: Colors.amber)), label: Text('${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal:6)))),
+          FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c,pSnap){
+            final isUnlimited = pSnap.data == PlanType.unlimited;
+            return FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c2,s)=> Padding(padding: const EdgeInsets.only(top:6,bottom:6), child: Chip(avatar: Image.asset('assets/icons/ig_coin.png', width:22, height:22, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:22, color: Colors.amber)), label: Text(isUnlimited ? '∞' : '${s.data??0}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)), visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal:6))));
+          }),
           const SizedBox(width:4),
           Padding(padding: const EdgeInsets.only(right:8), child: FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); setState((){}); }, icon: const Icon(Icons.workspace_premium_rounded, size:16), label: const Text('Planı Yükselt', style: TextStyle(fontSize:11, fontWeight: FontWeight.w800)))),
         ],
@@ -669,20 +673,28 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
               ),
               const SizedBox(height: 10),
               // Kota kartı
-              FutureBuilder<Map<String,int>>(future: SubscriptionService.getRemaining(), builder: (c,snap){
+              FutureBuilder<Map<String,int>>(key: ValueKey(_quotaVersion), future: SubscriptionService.getRemaining(), builder: (c,snap){
                 final r = snap.data;
                 if (r==null) return const SizedBox();
                 final rv = r['video'] ?? 0; final ra = r['audio'] ?? 0; final lv = r['limitVideo'] ?? 0; final la = r['limitAudio'] ?? 0; final ev = r['extraVideo'] ?? 0; final ea = r['extraAudio'] ?? 0;
                 final totalV = lv + ev; final totalA = la + ea;
                 return FutureBuilder<PlanType>(future: SubscriptionService.getPlan(), builder: (c2,ps){
                   final plan = ps.data ?? PlanType.free;
+                  final isUnlimited = plan == PlanType.unlimited;
+                  final videoText = isUnlimited ? 'Video ∞' : (ev>0 ? 'Video $rv / $totalV kaldı ($lv+$ev)' : 'Video $rv / $lv kaldı');
+                  final audioText = isUnlimited ? 'Ses ∞' : (ea>0 ? 'Ses $ra / $totalA kaldı ($la+$ea)' : 'Ses $ra / $la kaldı');
+                  final progressV = isUnlimited ? 1.0 : (totalV==0?0: (rv/totalV).clamp(0,1).toDouble());
+                  final progressA = isUnlimited ? 1.0 : (totalA==0?0: (ra/totalA).clamp(0,1).toDouble());
                   return Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:20, height:20, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:20, color: Colors.amber)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3)=> Text('${s3.data??0} Coin', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13)))]),
+                    Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:20, height:20, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:20, color: Colors.amber)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3){
+                      final coins = s3.data ?? 0;
+                      return Text(isUnlimited ? '∞ Coin' : '$coins Coin', style: const TextStyle(fontWeight: FontWeight.w800, fontSize:13));
+                    })]),
                     const SizedBox(height:8),
                     Row(children: [
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.videocam_rounded, size:14), const SizedBox(width:4), Text(ev>0 ? 'Video $rv / $totalV kaldı ($lv+$ev)' : 'Video $rv / $lv kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: totalV==0?0: (rv/totalV).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99)) ])),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.videocam_rounded, size:14), const SizedBox(width:4), Text(videoText, style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: progressV, minHeight:6, borderRadius: BorderRadius.circular(99)) ])),
                       const SizedBox(width:12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text(ea>0 ? 'Ses $ra / $totalA kaldı ($la+$ea)' : 'Ses $ra / $la kaldı', style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: totalA==0?0: (ra/totalA).clamp(0,1), minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [const Icon(Icons.music_note_rounded, size:14), const SizedBox(width:4), Text(audioText, style: const TextStyle(fontWeight: FontWeight.w700, fontSize:12))]), const SizedBox(height:4), LinearProgressIndicator(value: progressA, minHeight:6, borderRadius: BorderRadius.circular(99), color: Colors.green) ])),
                     ]),
                     const SizedBox(height:6),
                     Text('Kotalar her gün gece yarısı sıfırlanır', style: TextStyle(fontSize:10, color: Colors.grey[600])),

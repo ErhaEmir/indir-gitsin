@@ -92,13 +92,23 @@ class SubscriptionService {
     final last = prefs.getString(_kLastDaily);
     if (last != today) {
       await prefs.setString(_kLastDaily, today);
+      final plan = fromString(prefs.getString(_kPlan));
+      int bonus;
+      switch(plan){
+        case PlanType.free: bonus = 10; break;
+        case PlanType.plus: bonus = 250; break;
+        case PlanType.pro: bonus = 500; break;
+        case PlanType.unlimited: bonus = 500; break;
+      }
       final cur = prefs.getInt(_kCoins) ?? 0;
-      await prefs.setInt(_kCoins, cur + 10);
-      // streak
+      await prefs.setInt(_kCoins, cur + bonus);
       final streak = (prefs.getInt(_kStreak) ?? 0) + 1;
       await prefs.setInt(_kStreak, streak);
     }
   }
+
+  // dışarıdan günlük kontrol tetiklemek için
+  static Future<void> checkDailyBonusManual() async => _checkDailyBonus();
 
   static Future<PlanType> getPlan() async {
     final prefs = await SharedPreferences.getInstance();
