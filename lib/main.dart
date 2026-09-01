@@ -683,8 +683,8 @@ class HomeTabState extends ConsumerState<HomeTab> with TickerProviderStateMixin 
                   final isUnlimited = plan == PlanType.unlimited;
                   final videoText = isUnlimited ? 'Video ∞' : (ev>0 ? 'Video $rv / $totalV kaldı ($lv+$ev)' : 'Video $rv / $lv kaldı');
                   final audioText = isUnlimited ? 'Ses ∞' : (ea>0 ? 'Ses $ra / $totalA kaldı ($la+$ea)' : 'Ses $ra / $la kaldı');
-                  final progressV = isUnlimited ? 1.0 : (totalV==0?0: (rv/totalV).clamp(0,1).toDouble());
-                  final progressA = isUnlimited ? 1.0 : (totalA==0?0: (ra/totalA).clamp(0,1).toDouble());
+                  final progressV = isUnlimited ? 1.0 : (totalV==0?0.0: (rv/totalV).clamp(0,1).toDouble());
+                  final progressA = isUnlimited ? 1.0 : (totalA==0?0.0: (ra/totalA).clamp(0,1).toDouble());
                   return Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [Icon(Icons.account_circle_rounded, size:16, color: cs.primary), const SizedBox(width:6), Text('Plan: ${plan.name.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary, fontSize:12)), const Spacer(), Image.asset('assets/icons/ig_coin.png', width:20, height:20, errorBuilder: (_,__,___)=> const Icon(Icons.monetization_on_rounded, size:20, color: Colors.amber)), const SizedBox(width:4), FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c3,s3){
                       final coins = s3.data ?? 0;
