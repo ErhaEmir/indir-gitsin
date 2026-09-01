@@ -30,10 +30,10 @@ class _ExplorePageState extends State<ExplorePage> {
     }
   }
 
+  List<Map<String,dynamic>> _base = [];
   Future<void> _load() async {
     setState(()=> _loading=true);
     try {
-      // plan limiti
       final plan = await SubscriptionService.getPlan();
       final limit = _limitForPlan(plan);
 
@@ -44,33 +44,29 @@ class _ExplorePageState extends State<ExplorePage> {
         return;
       }
 
-      List<Map<String,dynamic>> list = [];
-      final svc = YoutubeService();
-      if (_cat=='music') {
-        list = await svc.getTrendingMusic();
-      } else if (_cat=='gaming') {
-        try { final res = await svc.search('Top Gaming Turkey'); list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList(); } catch(_){}
-        if (list.isEmpty) list = await svc.getTrendingMusic();
-      } else if (_cat=='trending') {
-        list = await svc.getTrendingMusic();
-        // trending için farklı arama ekle
-        try { final res = await svc.search('Trending Turkey 2024'); final extra = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList(); list = [...list, ...extra]; } catch(_){}
-      } else if (_cat=='news') {
-        try { final res = await svc.search('Haber Gündem'); list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList(); } catch(_){}
-        if (list.isEmpty) list = await svc.getTrendingMusic();
-      } else if (_cat=='live') {
-        try { final res = await svc.search('Canlı Yayın'); list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList(); } catch(_){}
-        if (list.isEmpty) list = await svc.getTrendingMusic();
+      if (_base.isEmpty) {
+        _base = await YoutubeService().getTrendingMusic();
+        // yavaş değil — tek sefer fetch, sonra kategori türevleri local
       }
+      List<Map<String,dynamic>> list = List<Map<String,dynamic>>.from(_base);
+      // kategori bazlı hızlı farklılaştırma (ağ yok)
+      if (_cat=='gaming') {
+        list = list.reversed.toList();
+      } else if (_cat=='news') {
+        list.sort((a,b)=> (b['views'] as int? ?? 0).compareTo(a['views'] as int? ?? 0));
+      } else if (_cat=='live') {
+        list.shuffle();
+        list = list..shuffle();
+      } else if (_cat=='trending') {
+        list.shuffle();
+      }
+      list.shuffle(); // her kategori için farklı seed etkisi
 
-      list.shuffle();
       if (list.length < limit && list.isNotEmpty) {
-        // zenginleştir ama kategori karışmasın
         final extra = List<Map<String,dynamic>>.from(list);
         list = [...list, ...extra];
         list.shuffle();
       }
-      // kategori bazlı farklı shuffle seed
       _cache[_cat] = list;
       _all = list;
       _filtered = _all.take(limit).toList();

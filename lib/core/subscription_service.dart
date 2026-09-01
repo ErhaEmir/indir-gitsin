@@ -292,4 +292,37 @@ class SubscriptionService {
     final p = await SharedPreferences.getInstance();
     return p.getInt(_kStreak) ?? 0;
   }
+
+  static Future<void> resetAllToZero() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_kCoins, 0);
+    await p.setInt(_kVideoUsed, 0);
+    await p.setInt(_kAudioUsed, 0);
+    await p.setInt(_kExtraVideo, 0);
+    await p.setInt(_kExtraAudio, 0);
+    await p.setInt(_kInviteCount, 0);
+    await p.setBool(_kBadge, false);
+    await p.setInt(_kStreak, 0);
+    // günlük bonusu sıfırla — bir sonraki ensureInit/girişte 10 verecek
+    await p.remove(_kLastDaily);
+    await p.remove(_kQuotaDate);
+  }
+
+  static Future<void> enforcePlanRestrictions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final plan = fromString(prefs.getString(_kPlan));
+    final isDev = prefs.getBool('dev_mode') ?? false;
+    if (isDev) return; // devde kısıtlama yok
+    // AMOLED free'de kapalı → koyu moda çek
+    if (plan == PlanType.free) {
+      final theme = prefs.getString('theme_mode');
+      if (theme == 'amoled') {
+        await prefs.setString('theme_mode', 'dark');
+      }
+      // premium ayarlar kapat
+      if (prefs.getBool('auto_folder') == true) await prefs.setBool('auto_folder', false);
+      if (prefs.getBool('auto_revoke') == true) await prefs.setBool('auto_revoke', false);
+      // default_format MP3/WEBM free'de kalsın mı? Kalsın ama istenirse mp4'e çekilebilir
+    }
+  }
 }

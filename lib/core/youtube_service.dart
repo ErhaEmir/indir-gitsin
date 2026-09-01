@@ -110,19 +110,53 @@ class YoutubeService {
     return out;
   }
 
-  // Arama — paralel batch
+  // Arama — önce Piped fallback (hızlı), sonra explode
   Future<List<VideoInfo>> search(String query) async {
-    final res = await _yt.search.search(query);
-    final ids = res.whereType<Video>().take(8).map((e) => e.id.value).toList(); // 10->8
-    final out = <VideoInfo>[];
-    for (int i = 0; i < ids.length; i += 4) {
-      final batch = ids.skip(i).take(4).toList();
-      final results = await Future.wait(batch.map((id) async {
-        try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
-      }));
-      for (final r in results) { if (r != null) out.add(r); }
+    // 1) Piped search dene (4 mirror)
+    for (final mirror in _pipedMirrors) {
+      try {
+        final r = await _dio.get('$mirror/search', queryParameters: {'q': query, 'filter': 'videos'}, options: Options(receiveTimeout: const Duration(seconds: 5), sendTimeout: const Duration(seconds: 5), headers: {'User-Agent': 'Mozilla/5.0'}));
+        if (r.statusCode == 200) {
+          final data = r.data;
+          final List items = data is Map ? (data['items'] as List? ?? data['videos'] as List? ?? []) : (data as List? ?? []);
+          final ids = items.map((e) => (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first).where((id) => id.length==11).take(8).toList();
+          if (ids.isNotEmpty) {
+            final out = <VideoInfo>[];
+            for (int i = 0; i < ids.length; i += 2) {
+              final batch = ids.skip(i).take(2).toList();
+              final results = await Future.wait(batch.map((id) async {
+                try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 8)); } catch (_) { return null; }
+              }));
+              for (final x in results) { if (x != null) out.add(x); }
+            }
+            if (out.isNotEmpty) return out;
+            // Piped sonuçlarını direkt VideoInfo olmadan da döndür (hızlı önizleme)
+            if (items.isNotEmpty) {
+              // Fallback: Piped verisinden sentetik VideoInfo
+              return items.take(8).map((e){
+                final id = (e['url']?.toString().split('v=').last ?? e['id']?.toString() ?? '').split('&').first;
+                return VideoInfo(id: id, title: e['title'] ?? 'Video', author: e['uploaderName'] ?? e['uploader'] ?? '', channelId: '', duration: null, thumbnailUrl: e['thumbnail'] ?? '', description: '', viewCount: e['views'] as int?, uploadDate: null, streams: []);
+              }).where((v)=> v.id.length==11 && v.streams.isEmpty==false || v.id.length==11).toList();
+            }
+          }
+        }
+      } catch (_) { continue; }
     }
-    return out;
+    // 2) YoutubeExplode fallback
+    try {
+      final res = await _yt.search.search(query).timeout(const Duration(seconds: 8));
+      final ids = res.whereType<Video>().take(8).map((e) => e.id.value).toList();
+      final out = <VideoInfo>[];
+      for (int i = 0; i < ids.length; i += 2) {
+        final batch = ids.skip(i).take(2).toList();
+        final results = await Future.wait(batch.map((id) async {
+          try { return await getVideoInfo('https://www.youtube.com/watch?v=$id').timeout(const Duration(seconds: 6)); } catch (_) { return null; }
+        }));
+        for (final r in results) { if (r != null) out.add(r); }
+      }
+      if (out.isNotEmpty) return out;
+    } catch (_) {}
+    return [];
   }
 
   // Altyazı

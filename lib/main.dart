@@ -125,6 +125,15 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   final _homeKey = GlobalKey<HomeTabState>();
   Future<void> _checkPlanActive() async {
     await SubscriptionService.ensureInit();
+    await SubscriptionService.enforcePlanRestrictions();
+    // tema kilidi — free + amoled ise koyu yap
+    final prefs = await SharedPreferences.getInstance();
+    final planStr = prefs.getString('sub_plan') ?? 'free';
+    final isDev = prefs.getBool('dev_mode') ?? false;
+    if (!isDev && planStr=='free' && prefs.getString('theme_mode')=='amoled') {
+      await prefs.setString('theme_mode', 'dark');
+      ref.read(themeModeProvider.notifier).state = 'dark';
+    }
     final active = await SubscriptionService.isPlanActive();
     if (!active && mounted) {
       await Navigator.of(context).push(MaterialPageRoute(builder: (_)=> const PlanPage(mustSelect: true)));
@@ -892,7 +901,7 @@ class FilesTabState extends State<FilesTab> {
       for (final pth in candidates) {
         final dir = Directory(pth);
         if (await dir.exists()) {
-          final files = await dir.list(recursive: true).where((e)=> e is File).toList();
+          final files = await dir.list(recursive: true).where((e)=> e is File && !e.path.endsWith('.nomedia') && !e.path.contains('/.')).toList();
           for (final f in files) { if (seenPaths.add(f.path)) all.add(f); }
         }
       }
@@ -1002,7 +1011,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   int _interval = 6;
   bool _checking = false;
   String? _status;
-  // PIN doğrulama — hash obscure
+  // Şifre doğrulama — hash obscure
   bool _verifyPin(String input, int which) {
     int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
     if (which == 1) return h == 955227; // dev.32.eb
@@ -1193,15 +1202,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                         final prefs = await SharedPreferences.getInstance();
                         final isLocked = prefs.getBool('dev_mode_locked') ?? false;
                         if (v) {
-                          // Eğer kilitliyse 2. PIN sor
+                          // Eğer kilitliyse 2. şifre sor
                           if (isLocked) {
                             final pin2Ctrl = TextEditingController();
                             final ok2 = await showDialog<bool>(
                               context: context,
                               builder: (d) => AlertDialog(
-                                title: const Text('PIN Gerekli'),
+                                title: const Text('Şifre Gerekli'),
                                 content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                  const Text('Devam etmek için PIN girin'),
+                                  const Text('Devam etmek için şifre girin'),
                                   const SizedBox(height: 12),
                                   TextField(controller: pin2Ctrl, keyboardType: TextInputType.text, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                                 ]),
@@ -1215,18 +1224,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               await prefs.setBool('dev_mode_locked', false);
                               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kilit açıldı, tekrar deneyin'), backgroundColor: Colors.green));
                             } else {
-                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red));
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış şifre'), backgroundColor: Colors.red));
                             }
                             return;
                           }
-                          // Normal 1. PIN sor
+                          // Normal 1. şifre sor
                           final pinCtrl = TextEditingController();
                           final ok = await showDialog<bool>(
                             context: context,
                             builder: (d) => AlertDialog(
-                              title: const Text('PIN Girin'),
+                              title: const Text('Şifre Girin'),
                               content: Column(mainAxisSize: MainAxisSize.min, children: [
-                                const Text('Geliştirici modunu açmak için PIN girin'),
+                                const Text('Geliştirici modunu açmak için şifre girin'),
                                 const SizedBox(height: 12),
                                 TextField(controller: pinCtrl, keyboardType: TextInputType.text, decoration: const InputDecoration(hintText: '••••', border: OutlineInputBorder()), obscureText: true),
                               ]),
@@ -1282,9 +1291,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                             await prefs.setBool('dev_mode', true);
                             (c as Element).markNeedsBuild();
                           } else {
-                            // Yanlış PIN -> kilitle
+                            // Yanlış şifre -> kilitle
                             await prefs.setBool('dev_mode_locked', true);
-                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış PIN'), backgroundColor: Colors.red, duration: Duration(seconds: 2)));
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yanlış şifre'), backgroundColor: Colors.red, duration: Duration(seconds: 2)));
                           }
                         } else {
                           final p = await SharedPreferences.getInstance();
@@ -1314,7 +1323,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                         await StorageService.history.clear();
                         await StorageService.fav.clear();
                         await StorageService.search.clear();
-                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tüm veriler sıfırlandı')));
+                        await SubscriptionService.resetAllToZero();
+                        // reset sonrası günlük 10 coin ver (ilk giriş)
+                        await SubscriptionService.addCoins(10);
+                        final p = await SharedPreferences.getInstance();
+                        await p.setString('sub_last_daily', '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2,'0')}-${DateTime.now().day.toString().padLeft(2,'0')}');
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tüm veriler sıfırlandı — Coin/Hak 0, günlük 10 Coin verildi')));
+                        (c as Element).markNeedsBuild();
                       }),
                     ]),
                     const SizedBox(height: 8),
@@ -1323,10 +1338,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     FutureBuilder<int>(future: SubscriptionService.getCoins(), builder: (c2,s2)=> Text('Mevcut Coin: ${s2.data??0}', style: const TextStyle(fontWeight: FontWeight.w800))),
                     const SizedBox(height:6),
                     Wrap(spacing:8, runSpacing:8, children: [
-                      FilledButton.icon(onPressed: () async { await SubscriptionService.addCoins(100); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+100 Coin'))); }, icon: const Icon(Icons.add_rounded), label: const Text('+100 Coin')),
-                      FilledButton.icon(onPressed: () async { await SubscriptionService.addCoins(1000); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('+1000 Coin'))); }, icon: const Icon(Icons.add_rounded), label: const Text('+1000')),
-                      OutlinedButton.icon(onPressed: () async { await SubscriptionService.removeCoins(100); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('-100 Coin'))); }, icon: const Icon(Icons.remove_rounded), label: const Text('-100')),
-                      OutlinedButton.icon(onPressed: () async { await SubscriptionService.removeCoins(500); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.remove_rounded), label: const Text('-500')),
+                      FilledButton.icon(onPressed: () async {
+                        final ctrl = TextEditingController();
+                        final v = await showDialog<int>(context: context, builder: (d)=> AlertDialog(title: const Text('Coin Ekle'), content: TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'Miktar', border: OutlineInputBorder())), actions: [TextButton(onPressed: ()=> Navigator.pop(d), child: Text('cancel'.tr())), FilledButton(onPressed: (){ final n=int.tryParse(ctrl.text) ?? 0; Navigator.pop(d, n); }, child: const Text('Ekle'))]));
+                        if (v!=null && v>0) { await SubscriptionService.addCoins(v); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('+$v Coin'))); }
+                      }, icon: const Icon(Icons.add_rounded), label: const Text('Coin Ekle')),
+                      FilledButton.icon(onPressed: () async {
+                        final ctrl = TextEditingController();
+                        final v = await showDialog<int>(context: context, builder: (d)=> AlertDialog(title: const Text('Coin Sil'), content: TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'Miktar', border: OutlineInputBorder())), actions: [TextButton(onPressed: ()=> Navigator.pop(d), child: Text('cancel'.tr())), FilledButton(onPressed: (){ final n=int.tryParse(ctrl.text) ?? 0; Navigator.pop(d, n); }, child: const Text('Sil'))]));
+                        if (v!=null && v>0) { await SubscriptionService.removeCoins(v); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('-$v Coin'))); }
+                      }, icon: const Icon(Icons.remove_rounded), label: const Text('Coin Sil')),
                       FilledButton.tonalIcon(onPressed: () async { await SubscriptionService.selectPlan(PlanType.unlimited); (c as Element).markNeedsBuild(); if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sınırsız Plan aktif'))); }, icon: const Icon(Icons.all_inclusive_rounded), label: const Text('Sınırsız Aktif')),
                       OutlinedButton.icon(onPressed: () async { await SubscriptionService.selectPlan(PlanType.free); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.restart_alt_rounded), label: const Text('Free Yap')),
                       FilledButton.tonalIcon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_)=> const PlanPage())); (c as Element).markNeedsBuild(); }, icon: const Icon(Icons.workspace_premium_rounded), label: const Text('Plan Seç')),
