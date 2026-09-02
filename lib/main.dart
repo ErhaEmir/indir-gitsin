@@ -1378,6 +1378,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                         (c as Element).markNeedsBuild();
                       }),
                     ]),
+                    const SizedBox(height: 12),
+                    FutureBuilder<bool>(future: SharedPreferences.getInstance().then((p)=> p.getBool('dev_payment_panel_enabled') ?? true), builder: (c2,s2){
+                      final val = s2.data ?? true;
+                      return SwitchListTile(
+                        value: val,
+                        title: const Text('Ödeme Paneli Göster / Test Et', style: TextStyle(fontWeight: FontWeight.w700, fontSize:13)),
+                        subtitle: Text(val ? 'AÇIK — Satın alırken kart paneli gösterilir, geçerli kartta başarılı' : 'KAPALI — Satın al direkt başarılı (panel yok)', style: const TextStyle(fontSize:11)),
+                        secondary: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blue.withOpacity(0.12), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.payment_rounded, color: Colors.blue)),
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (v) async { final p=await SharedPreferences.getInstance(); await p.setBool('dev_payment_panel_enabled', v); (c as Element).markNeedsBuild(); },
+                      );
+                    }),
                     const SizedBox(height: 8),
                     Text('Dev Coin & Plan Araçları', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.red[700], fontSize:13)),
                     const SizedBox(height:6),

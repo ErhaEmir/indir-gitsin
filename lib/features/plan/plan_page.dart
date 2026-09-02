@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/subscription_service.dart';
+import '../payment/payment_sheet.dart';
 
 class PlanPage extends StatefulWidget {
   const PlanPage({super.key, this.mustSelect=false});
@@ -23,16 +24,41 @@ class _PlanPageState extends State<PlanPage> {
   }
 
   Future<void> _select(PlanType p) async {
-    if ((p==PlanType.plus || p==PlanType.pro) && !_isDev) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Plus ve Pro planları şu anda kapalı — yakında!'), behavior: SnackBarBehavior.floating));
+    // Free direkt
+    if (p == PlanType.free) {
+      final ok = await SubscriptionService.selectPlan(p);
+      if (ok) {
+        await _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.name.toUpperCase()} aktif!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
+        if (widget.mustSelect && mounted) Navigator.of(context).pop(true);
+      }
       return;
     }
-    final ok = await SubscriptionService.selectPlan(p);
-    if (ok) {
-      await _load();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.name.toUpperCase()} aktif!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
-      if (widget.mustSelect && mounted) Navigator.of(context).pop(true);
+    // Unlimited sadece dev
+    if (p == PlanType.unlimited) {
+      if (!_isDev) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sınırsız plan sadece Dev modunda'), behavior: SnackBarBehavior.floating));
+        return;
+      }
+      final ok = await SubscriptionService.selectPlan(p);
+      if (ok) {
+        await _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.name.toUpperCase()} aktif!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
+        if (widget.mustSelect && mounted) Navigator.of(context).pop(true);
+      }
+      return;
     }
+    // Plus/Pro -> Ödeme paneli
+    final price = p==PlanType.plus ? '36 TL / ay' : '50 TL / ay';
+    final title = p==PlanType.plus ? 'Plus Plan' : 'Pro Plan';
+    await PaymentSheet.show(context, title: title, price: price, description: p==PlanType.plus ? '24 video / 12 ses + 500 Coin' : '80 video / 80 ses + 1500 Coin', onSuccessDev: () async {
+      final ok = await SubscriptionService.selectPlan(p);
+      if (ok) {
+        await _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.name.toUpperCase()} aktif!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
+        if (widget.mustSelect && mounted) Navigator.of(context).pop(true);
+      }
+    });
   }
 
   Future<void> _cancel() async {
@@ -90,8 +116,8 @@ class _PlanPageState extends State<PlanPage> {
             features: ['Tüm ayarlar açık','AMOLED dahil','Öncelikli destek','500 Coin başlangıç'],
             color: Colors.blue,
             isCurrent: _current==PlanType.plus,
-            isDisabled: !_isDev,
-            disabledReason: 'Yakında — Şu an kapalı',
+            isDisabled: false,
+            disabledReason: null,
             onSelect: ()=> _select(PlanType.plus),
           ),
           _planCard(
@@ -103,8 +129,8 @@ class _PlanPageState extends State<PlanPage> {
             features: ['Tüm ayarlar açık','Teknik Destek ayrıcalığı','En yüksek kota','1500 Coin başlangıç'],
             color: Colors.deepPurple,
             isCurrent: _current==PlanType.pro,
-            isDisabled: !_isDev,
-            disabledReason: 'Yakında — Şu an kapalı',
+            isDisabled: false,
+            disabledReason: null,
             onSelect: ()=> _select(PlanType.pro),
           ),
           if (_isDev) _planCard(

@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/subscription_service.dart';
 import '../plan/plan_page.dart';
+import '../payment/payment_sheet.dart';
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key});
@@ -63,18 +64,22 @@ class MarketPageState extends State<MarketPage> {
             await _load(); if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('1 Ses hakkı eklendi ✓'), backgroundColor: Colors.green));
           })),
         ]),
-        if (!_isDev) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.orange.withOpacity(0.2))), child: Row(children: [const Icon(Icons.info_outline_rounded, color: Colors.orange, size:20), const SizedBox(width:8), Expanded(child: Text('Ödeme sistemi henüz eklenmedi — Coin paketleri şu an sadece Dev modunda test için açık', style: TextStyle(fontSize:12, color: Colors.grey[700])))])),
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.withOpacity(0.2))), child: Row(children: [const Icon(Icons.lock_rounded, color: Colors.blue, size:20), const SizedBox(width:8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('256-bit SSL ile Güvenli Ödeme (Simüle)', style: TextStyle(fontSize:12, fontWeight: FontWeight.w800, color: Colors.blue[800])), Text('Kart bilgileriniz asla saklanmaz, sadece Luhn kontrolü yapılır. Normal modda ödeme her zaman başarısız sayılır.', style: TextStyle(fontSize:11, color: Colors.grey[700]))]))])),
         const SizedBox(height:12),
         Text('Coin Paketleri (Gerçek Para — Simüle)', style: TextStyle(fontWeight: FontWeight.w800, fontSize:16, color: cs.primary)),
-        const SizedBox(height:4),
-        if (!_isDev) Text('Dev mod kapalıyken satın alma kapalı', style: TextStyle(fontSize:11, color: Colors.grey[600])),
         const SizedBox(height:8),
         ...[
           {'c':100,'p':10},
           {'c':250,'p':20},
           {'c':500,'p':25},
           {'c':1000,'p':30},
-        ].map((e)=> Card(child: ListTile(leading: _coinIcon(), title: Text('${e['c']} Coin'), subtitle: Text('${e['p']} TL'), trailing: FilledButton(onPressed: _isDev ? () async { await SubscriptionService.buyCoinPack(e['c'] as int, e['p'] as int); await _load(); if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${e['c']} Coin eklendi ✓'))); } : null, child: Text(_isDev ? 'Satın Al' : 'Kapalı')),))),
+        ].map((e)=> Card(child: ListTile(leading: _coinIcon(), title: Text('${e['c']} Coin'), subtitle: Text('${e['p']} TL'), trailing: FilledButton(onPressed: () async {
+          await PaymentSheet.show(context, title: '${e['c']} Coin Paketi', price: '${e['p']} TL', description: '${e['c']} Coin', onSuccessDev: () async {
+            await SubscriptionService.buyCoinPack(e['c'] as int, e['p'] as int);
+            await _load();
+            if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${e['c']} Coin eklendi ✓')));
+          });
+        }, child: const Text('Satın Al')),))),
         const SizedBox(height:16),
         Text('Coin Kazan', style: TextStyle(fontWeight: FontWeight.w800, fontSize:16, color: cs.primary)),
         const SizedBox(height:8),
