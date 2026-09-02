@@ -63,47 +63,38 @@ class _ExplorePageState extends State<ExplorePage> {
 
       List<Map<String,dynamic>> list = [];
       final svc = YoutubeService();
+      // demo fallback — her kategori için garantili içerik
+      final demo = [
+        {'id': 'jNQXAC9IVRw', 'title': 'Me at the zoo', 'thumbnail': 'https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg', 'author': 'jawed', 'views': 300000000},
+        {'id': '9bZkp7q19f0', 'title': 'PSY - GANGNAM STYLE', 'thumbnail': 'https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg', 'author': 'officialpsy', 'views': 5500000000},
+        {'id': 'kJQP7kiw5Fk', 'title': 'Luis Fonsi - Despacito', 'thumbnail': 'https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg', 'author': 'Luis Fonsi', 'views': 8300000000},
+        {'id': 'RgKAFK5djSk', 'title': 'Wiz Khalifa - See You Again', 'thumbnail': 'https://i.ytimg.com/vi/RgKAFK5djSk/hqdefault.jpg', 'author': 'Wiz Khalifa', 'views': 6000000000},
+        {'id': 'OPf0YbXqDm0', 'title': 'Mark Ronson - Uptown Funk', 'thumbnail': 'https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg', 'author': 'Mark Ronson', 'views': 5000000000},
+        {'id': 'CevxZvSJLk8', 'title': 'Katy Perry - Roar', 'thumbnail': 'https://i.ytimg.com/vi/CevxZvSJLk8/hqdefault.jpg', 'author': 'Katy Perry', 'views': 4000000000},
+      ];
       if (_cat=='music') {
-        if (_base.isEmpty) _base = await svc.getTrendingMusic();
+        if (_base.isEmpty) {
+          try { _base = await svc.getTrendingMusic().timeout(const Duration(seconds: 5)); } catch(_){ _base = demo; }
+          if (_base.isEmpty) _base = demo;
+        }
         list = List<Map<String,dynamic>>.from(_base);
-      } else if (_cat=='trending') {
+      } else {
         try {
-          final res = await svc.search('trending Turkey 2024');
+          final q = _cat=='trending' ? 'trending Turkey' : _cat=='gaming' ? 'gaming Turkey' : _cat=='news' ? 'haber gündem' : 'canlı yayın live';
+          final res = await svc.search(q).timeout(const Duration(seconds: 5));
           list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
         } catch (_){}
         if (list.isEmpty) {
-          if (_base.isEmpty) _base = await svc.getTrendingMusic();
+          if (_base.isEmpty) {
+            try { _base = await svc.getTrendingMusic().timeout(const Duration(seconds: 5)); } catch(_){ _base = demo; }
+            if (_base.isEmpty) _base = demo;
+          }
           list = List<Map<String,dynamic>>.from(_base);
-          list.shuffle();
+          if (_cat=='gaming') list = list.reversed.toList();
+          else if (_cat=='news') list.sort((a,b)=> (b['views'] as int? ?? 0).compareTo(a['views'] as int? ?? 0));
         }
-      } else if (_cat=='gaming') {
-        try {
-          final res = await svc.search('gaming Turkey');
-          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
-        } catch (_){}
-        if (list.isEmpty) {
-          if (_base.isEmpty) _base = await svc.getTrendingMusic();
-          list = List<Map<String,dynamic>>.from(_base).reversed.toList();
-        }
-      } else if (_cat=='news') {
-        try {
-          final res = await svc.search('haber gündem son dakika');
-          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
-        } catch (_){}
-        if (list.isEmpty) {
-          if (_base.isEmpty) _base = await svc.getTrendingMusic();
-          list = List<Map<String,dynamic>>.from(_base);
-          list.sort((a,b)=> (b['views'] as int? ?? 0).compareTo(a['views'] as int? ?? 0));
-        }
-      } else if (_cat=='live') {
-        try {
-          final res = await svc.search('canlı yayın live Turkey');
-          list = res.map((v)=> {'id': v.id, 'title': v.title, 'thumbnail': v.thumbnailUrl, 'author': v.author, 'views': v.viewCount ?? 0}).toList();
-        } catch (_){}
-        if (list.isEmpty) {
-          if (_base.isEmpty) _base = await svc.getTrendingMusic();
-          list = List<Map<String,dynamic>>.from(_base);
-        }
+        // kategori farkı için shuffle + demo karıştır
+        if (list.length < 10) list = [...list, ...demo.take(6)];
       }
       list.shuffle();
       // sınırsız için de limit kadar göster ama her refresh farklı
