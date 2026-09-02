@@ -1030,13 +1030,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     if (m%60==0) return '${m~/60} ' + (m==60 ? 'hour'.tr() : 'hours'.tr());
     return '${m~/60}h ${m%60}m';
   }
-  // Şifre doğrulama — hash obscure
-  bool _verifyPin(String input, int which) {
-    int h = 0; for (int i = 0; i < input.length; i++) { h = (h * 31 + input.codeUnitAt(i)) % 999999; }
-    if (which == 1) return h == 955227; // dev.32.eb
-    if (which == 2) return h == 182398; // 192.168
-    return false;
-  }
   @override void initState(){ super.initState(); _load(); }
   Future<void> _load() async {
     final p=await SharedPreferences.getInstance();
@@ -1262,7 +1255,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                                 ]),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
-                                  FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pin2Ctrl.text, 2)), child: const Text('Onayla')),
+                                  FilledButton(onPressed: () => Navigator.pop(d, SubscriptionService.verifyPin(pin2Ctrl.text, 2)), child: const Text('Onayla')),
                                 ],
                               ),
                             );
@@ -1287,7 +1280,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               ]),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(d, false), child: Text('cancel'.tr())),
-                                FilledButton(onPressed: () => Navigator.pop(d, _verifyPin(pinCtrl.text, 1)), child: const Text('Onayla')),
+                                FilledButton(onPressed: () => Navigator.pop(d, SubscriptionService.verifyPin(pinCtrl.text, 1)), child: const Text('Onayla')),
                               ],
                             ),
                           );

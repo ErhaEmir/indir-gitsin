@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  crypto: ^3.0.6
   # YouTube core - saf Dart ile video bilgisi ve stream çekme
   youtube_explode_dart: ^2.5.2
   # Durum yönetimi

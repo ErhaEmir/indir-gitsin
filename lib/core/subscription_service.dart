@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum PlanType { free, plus, pro, unlimited }
@@ -20,6 +22,18 @@ class SubscriptionService {
   static String _today() {
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2,'0')}-${n.day.toString().padLeft(2,'0')}';
+  }
+
+  // PIN doğrulama — SHA-256 hash ile (güçlü, zayıf hash taşıyıcı hash'e dönüştürüldü)
+  // Hash'ler salting yapılmadan generate edildi; aynı PIN'i password hash'i ile değiştirebilirsin.
+  static bool verifyPin(String input, int which) {
+    if (which != 1 && which != 2) return false;
+    final pin = input.trim();
+    if (pin.isEmpty) return false;
+    final digest = sha256.convert(utf8.encode(pin)).toString();
+    const target1 = '57a4a67a10f9ba85147a7dfd1feb24684e920c33a9e5a57d4c57a39d34fce7dc'; // dev.32.eb
+    const target2 = 'c0bb238099b3e15732d971566d733ccd84fc9e40f7f559419e07f8918d8be111'; // 192.168
+    return which == 1 ? digest == target1 : digest == target2;
   }
 
   static Map<String,int> limits(PlanType p) {
